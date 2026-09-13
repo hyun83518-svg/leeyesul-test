@@ -645,7 +645,7 @@ def load_send_log() -> pd.DataFrame | None:
         for _, r in S.iterrows():
             rows.append({"발송일": pd.to_datetime(r["발송일"]), "캠페인": cp2promo.get(r["캠페인ID"], r["캠페인ID"]),
                          "캠페인명": r["캠페인명(자동)"], "채널": r["채널"],
-                         "연락처_정규화": normalize_phone(r["연락처"]), "타겟": r["캠페인명(자동)"][:3].strip()})
+                         "연락처_정규화": normalize_phone(r["연락처"]), "타겟": r["캠페인명(자동)"][:3].strip(), "_파일시각": None})
     # (b) 발송명단_<날짜>_*.xlsx: 시트마다 명단 (이름/연락처/…)
     # 발송일 → (캠페인 코드, 설명, 사용할 시트 목록(None=자동), 홀드아웃 시트)
     meta = {"2026-07-25": ("20260724_promo", "토요발송 T1~T3A", None, None),
@@ -660,7 +660,10 @@ def load_send_log() -> pd.DataFrame | None:
         # 등록된 회차가 없으면 파일명 규칙으로 자동 인식: 발송명단_<YYYY-MM-DD>_<캠페인코드>.xlsx
         #  - '연락처'/'전화번호' 컬럼이 있는 시트 = 수신자 명단 (단, 시트명에 제외·보류·참고·요약·문안·설명·라인업·차종·체크·자동화·검증·KPI 가 있으면 건너뜀)
         #  - 시트명에 '홀드아웃' 이 있으면 대조군
-        auto_code = f.stem.split("_", 2)[2] if f.stem.count("_") >= 2 else f.stem
+        rest = f.stem.split("_", 2)[2] if f.stem.count("_") >= 2 else f.stem
+        mt = re.match(r"^(\d{2})(\d{2})_(.+)$", rest)          # 발송명단_<날짜>_<HHMM>_<코드>
+        file_time = f"{mt.group(1)}:{mt.group(2)}" if mt else None
+        auto_code = mt.group(3) if mt else rest
         camp, cname, sheets, holdout = meta.get(day, (auto_code, f"{day} {auto_code}", None, None))
         skip_words = ("제외", "보류", "참고", "요약", "문안", "설명", "라인업", "차종", "체크", "자동화", "검증", "KPI", "기존예약")
         xl = pd.ExcelFile(f)
@@ -690,13 +693,57 @@ def load_send_log() -> pd.DataFrame | None:
                     tgt = f"홀드아웃 {tgt}"
                 rows.append({"발송일": pd.to_datetime(day), "캠페인": camp, "캠페인명": cname,
                              "채널": "미발송(대조군)" if is_holdout else "SMS",
-                             "연락처_정규화": normalize_phone(r["연락처"]), "타겟": tgt})
+                             "연락처_정규화": normalize_phone(r["연락처"]), "타겟": tgt, "_파일시각": file_time})
     if not rows:
         return None
     L = pd.DataFrame(rows).dropna(subset=["연락처_정규화"])
     # 같은 날 같은 사람에게 같은 캠페인이 발송이력 시트와 발송명단 파일 양쪽에 있으면 한 건으로
     L = L.drop_duplicates(["발송일", "연락처_정규화"], keep="first")
     L["홀드아웃"] = L["채널"].eq("미발송(대조군)")
+    return L
+
+
+# 회차별 실제 발송 시각 (보고서·발송요약 기록). 확인 안 된 회차는 권장 시각으로 두고 '추정'으로 표시.
+SEND_TIMES = {
+    "2026-07-11": ("10:00", "추정", "7/11 대량 발송. 7월 성과보고: 반응 24시간 집중"),
+    "2026-07-25": ("10:00", "기록", "발송요약: 토요일 오전 10시 발송"),
+    "2026-07-31": ("17:00", "기록", "7/31 vs 8/7 비교 보고서: 7/31(금) 17:00"),
+    "2026-08-07": ("17:00", "기록", "7/31 vs 8/7 비교 보고서: 8/7(금) 17:00"),
+    "2026-08-14": ("15:00", "추정", "연휴 명단 ①: 8/14(금) 오후 3~6시 권장. 실제 시각 미확인"),
+    "2026-08-22": ("14:28", "기록", "8/22 보고: 토 용산 14:28 / 인천 14:37 (웹발송)"),
+    "2026-09-04": ("11:34", "추정", "CRM2 요약: '26-09-04 11:33:58 발송시간 변경' 기록. 실제 발송 시각 확인 필요"),
+}
+WEEKDAY_KO = ["월", "화", "수", "목", "금", "토", "일"]
+
+
+def send_slot(hour: int) -> str:
+    if hour < 12:
+        return "오전(~12시)"
+    if hour < 15:
+        return "점심(12~15시)"
+    if hour < 18:
+        return "오후(15~18시)"
+    return "저녁(18시~)"
+
+
+def add_send_times(L: pd.DataFrame) -> pd.DataFrame:
+    L = L.copy()
+    day = L["발송일"].dt.strftime("%Y-%m-%d")
+    t = day.map(lambda d: SEND_TIMES.get(d, ("10:00", "추정", "기록 없음 → 10:00 가정"))[0])
+    src = day.map(lambda d: SEND_TIMES.get(d, ("", "추정", "기록 없음"))[1])
+    if "_파일시각" in L.columns:                       # 파일명에 HHMM이 있으면 그것을 최우선
+        has = L["_파일시각"].notna()
+        t = t.where(~has, L["_파일시각"])
+        src = src.where(~has, "파일명")
+    L["발송일시"] = pd.to_datetime(day + " " + t)
+    L["발송시각"] = t
+    L["발송시각_근거"] = src
+    L["발송요일"] = L["발송일시"].dt.dayofweek.map(lambda i: WEEKDAY_KO[i])
+    L["발송시간대"] = L["발송일시"].dt.hour.map(send_slot)
+    # 8/22 인천은 14:37
+    m = (day == "2026-08-22") & L["타겟"].str.contains("인천", na=False)
+    L.loc[m, "발송일시"] = pd.to_datetime("2026-08-22 14:37")
+    L.loc[m, "발송시각"] = "14:37"
     return L
 
 
@@ -709,8 +756,14 @@ def attach_conversions(L: pd.DataFrame, E: pd.DataFrame | None, window_days: int
     L["발송시_이용횟수"] = 0
     L["발송시_최근성_일"] = pd.NA
     L["발송시_생애단계"] = "미이용"
+    L["전환_결제일시"] = pd.NaT
+    L["전환_경과시간_h"] = pd.NA
+    L["전환_결제요일"] = pd.NA
+    L["전환_결제시각"] = pd.NA
     if E is None:
         return L
+    if "발송일시" not in L.columns:
+        L = add_send_times(L)
     V = E[~E["취소"] & E["연락처_정규화"].notna()]
     byp = {k: g.sort_values("접수") for k, g in V.groupby("연락처_정규화")}
     for i, r in L.iterrows():
@@ -724,12 +777,94 @@ def attach_conversions(L: pd.DataFrame, E: pd.DataFrame | None, window_days: int
             rec = (r["발송일"] - before["예약시작"].max()).days
             L.at[i, "발송시_최근성_일"] = rec
             L.at[i, "발송시_생애단계"] = "활성" if rec <= 30 else ("이탈위험" if (n_before >= 2 and rec <= 90) else "휴면")
-        w = g[(g["접수"] >= r["발송일"]) & (g["접수"] < r["발송일"] + pd.Timedelta(days=window_days))]
+        t0 = r["발송일시"]
+        w = g[(g["접수"] >= t0) & (g["접수"] < t0 + pd.Timedelta(days=window_days))]
         if len(w):
+            first = w["접수"].min()
             L.at[i, "전환"] = True
             L.at[i, "전환금액"] = float(w["순결제"].sum())
             L.at[i, "전환예약일"] = w["예약시작"].min()
+            L.at[i, "전환_결제일시"] = first
+            L.at[i, "전환_경과시간_h"] = round((first - t0).total_seconds() / 3600, 1)
+            L.at[i, "전환_결제요일"] = WEEKDAY_KO[first.dayofweek]
+            L.at[i, "전환_결제시각"] = int(first.hour)
     return L
+
+
+ELAPSED_BINS = [(-1, 1, "1시간 이내"), (1, 3, "1~3시간"), (3, 6, "3~6시간"), (6, 24, "6~24시간"), (24, 72, "1~3일"), (72, 168, "3~7일"), (168, 336, "7~14일")]
+
+
+def timing_analysis(L: pd.DataFrame, df: pd.DataFrame) -> tuple[dict, dict[str, pd.DataFrame]]:
+    """발송 일시 기록 + 반응 타이밍(경과시간·결제 시각·요일) + 발송 슬롯별·시간성향별 전환율."""
+    Ls = L[~L["홀드아웃"]].copy()
+    Ls["측정가능"] = Ls["발송일시"].map(lambda d: PAY_MAX is not None and (PAY_MAX - d.normalize()).days >= 14)
+    prof = df.drop_duplicates("연락처_정규화")[["연락처_정규화", "시간성향", "주지점"]]
+    Ls = Ls.merge(prof, on="연락처_정규화", how="left")
+    conv = Ls[Ls["전환"]].copy()
+    conv["경과h"] = pd.to_numeric(conv["전환_경과시간_h"], errors="coerce")
+
+    # (a) 회차별 발송 일시·타이밍
+    rows = []
+    for (d, camp, tgt), g in Ls.groupby([Ls["발송일시"], "캠페인", "타겟"]):
+        c = g[g["전환"]]; e = pd.to_numeric(c["전환_경과시간_h"], errors="coerce")
+        rows.append({"발송일시": d.strftime("%Y-%m-%d %H:%M"), "요일": WEEKDAY_KO[d.dayofweek], "시간대": send_slot(d.hour),
+                     "시각근거": g["발송시각_근거"].iloc[0], "캠페인": camp, "타겟": tgt, "발송": len(g), "전환자": int(len(c)),
+                     "전환율%": round(len(c) / len(g) * 100, 1) if len(g) else 0,
+                     "측정": "완전" if g["측정가능"].iloc[0] else "부분/불가",
+                     "경과시간_중앙값h": round(e.median(), 1) if len(e) else None,
+                     "24h내_전환비율%": round((e <= 24).mean() * 100, 0) if len(e) else None,
+                     "첫결제_시각분포": ", ".join(f"{int(k)}시 {v}" for k, v in c["전환_결제시각"].dropna().astype(int).value_counts().sort_index().items()),
+                     "첫결제_요일분포": ", ".join(f"{k} {v}" for k, v in c["전환_결제요일"].value_counts().items())})
+    by_round = pd.DataFrame(rows).sort_values(["발송일시", "타겟"])
+
+    # (b) 경과시간 분포 (완전 측정 회차)
+    cm = conv[conv["측정가능"]]
+    el = []
+    for lo, hi, lab in ELAPSED_BINS:
+        n = int(((cm["경과h"] > lo) & (cm["경과h"] <= hi)).sum())
+        el.append({"경과시간": lab, "전환자": n, "비율%": round(n / len(cm) * 100, 1) if len(cm) else 0, "누적%": None})
+    acc = 0
+    for r in el:
+        acc += r["비율%"]; r["누적%"] = round(acc, 1)
+    elapsed = pd.DataFrame(el)
+
+    # (c) 전환 결제 시각·요일 분포
+    hour_dist = cm["전환_결제시각"].dropna().astype(int).value_counts().sort_index()
+    wd_dist = cm["전환_결제요일"].value_counts().reindex(WEEKDAY_KO).fillna(0).astype(int)
+
+    # (d) 발송 요일×시간대 슬롯별 전환율 (완전 측정)
+    M = Ls[Ls["측정가능"]]
+    slot = M.groupby(["발송요일", "발송시간대"]).agg(발송=("전환", "size"), 전환자=("전환", "sum")).reset_index()
+    slot["전환율%"] = (slot["전환자"] / slot["발송"] * 100).round(1)
+    slot["회차"] = M.groupby(["발송요일", "발송시간대"])["발송일시"].agg(lambda x: ", ".join(sorted(set(d.strftime("%m/%d %H:%M") for d in x)))).values
+    slot = slot.sort_values("전환율%", ascending=False)
+
+    # (e) 고객 시간성향 × 발송 시간대 → 전환율 (완전 측정, 시간성향 있는 결제고객만)
+    Mp = M[M["시간성향"].notna()]
+    pt = Mp.groupby(["시간성향", "발송시간대"]).agg(발송=("전환", "size"), 전환자=("전환", "sum")).reset_index()
+    pt["전환율%"] = (pt["전환자"] / pt["발송"] * 100).round(1)
+    pt = pt.sort_values(["시간성향", "전환율%"], ascending=[True, False])
+    # 시간성향별 첫 결제 시각 중앙값 (문자 받은 뒤 언제 결제하나)
+    pk = cm[cm["시간성향"].notna()].groupby("시간성향").agg(전환자=("경과h", "size"), 경과중앙값h=("경과h", "median"),
+                                                     결제시각_최빈=("전환_결제시각", lambda x: int(x.dropna().astype(int).mode().iloc[0]) if x.notna().any() else None)).reset_index()
+
+    summary = {
+        "by_round": by_round.to_dict(orient="records"),
+        "elapsed": elapsed.to_dict(orient="records"),
+        "elapsed_median_h": round(float(cm["경과h"].median()), 1) if len(cm) else None,
+        "within_24h_pct": round(float((cm["경과h"] <= 24).mean() * 100), 1) if len(cm) else None,
+        "conv_hour": {int(k): int(v) for k, v in hour_dist.items()},
+        "conv_weekday": {k: int(v) for k, v in wd_dist.items()},
+        "slot": slot.to_dict(orient="records"),
+        "pref_x_slot": pt.to_dict(orient="records"),
+        "pref_timing": pk.round(1).to_dict(orient="records"),
+        "n_conv_measured": int(len(cm)),
+    }
+    tables = {"발송타이밍_회차별": by_round, "반응_경과시간": elapsed,
+              "반응_결제시각": pd.DataFrame({"결제시각": hour_dist.index, "전환자": hour_dist.values}),
+              "반응_결제요일": pd.DataFrame({"요일": wd_dist.index, "전환자": wd_dist.values}),
+              "발송슬롯별_전환": slot, "시간성향x발송슬롯": pt, "시간성향별_반응타이밍": pk.round(1)}
+    return summary, tables
 
 
 def send_aggregates(L: pd.DataFrame) -> pd.DataFrame:
@@ -1483,6 +1618,36 @@ def write_markdown(summary: dict, path: Path) -> None:
         for r in rp["by_target"]:
             L.append(f"| {r['캠페인']} | {r['타겟']} | {r['발송']} | {r['이력고객']} | {r['전환자']} ({r['전환율%']}%) | {r['생애단계']} | {r['시간성향']} | {r['취향장르']} | {r['마케팅상태']} | {r['전환자_시간성향']} |")
         L.append("")
+    tm = summary.get("timing")
+    if tm:
+        L.append("\n## 15. 발송 시점과 반응 타이밍\n")
+        L.append("회차별 발송 일시(기록/추정)와 전환자의 반응 타이밍. 경과시간 = 발송 시각부터 첫 유효 결제까지.\n")
+        L.append("| 발송일시 | 요일 | 시간대 | 근거 | 캠페인 | 타겟 | 발송 | 전환 | 전환율 | 측정 | 경과 중앙값 | 24h내 | 첫 결제 시각 |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+        for r in tm["by_round"]:
+            med = r['경과시간_중앙값h']; w24 = r['24h내_전환비율%']
+            med_s = "-" if med is None or med != med else f"{med}h"
+            w24_s = "-" if w24 is None or w24 != w24 else f"{int(w24)}%"
+            L.append(f"| {r['발송일시']} | {r['요일']} | {r['시간대']} | {r['시각근거']} | {r['캠페인']} | {r['타겟']} | {r['발송']} | {r['전환자']} | {r['전환율%']}% | {r['측정']} | {med_s} | {w24_s} | {r['첫결제_시각분포']} |")
+        L.append(f"\n완전 측정 회차 전환자 {tm['n_conv_measured']}명 기준 — 경과시간 중앙값 {tm['elapsed_median_h']}시간, 24시간 내 전환 {tm['within_24h_pct']}%\n")
+        L.append("| 경과시간 | 전환자 | 비율 | 누적 |\n|---|---|---|---|")
+        for r in tm["elapsed"]:
+            L.append(f"| {r['경과시간']} | {r['전환자']} | {r['비율%']}% | {r['누적%']}% |")
+        L.append("\n전환자의 첫 결제 시각: " + ", ".join(f"{k}시 {v}" for k, v in tm["conv_hour"].items()))
+        L.append("\n전환자의 첫 결제 요일: " + ", ".join(f"{k} {v}" for k, v in tm["conv_weekday"].items()))
+        L.append("\n발송 요일×시간대 슬롯별 전환율 (완전 측정 회차):\n")
+        L.append("| 발송요일 | 발송시간대 | 회차 | 발송 | 전환자 | 전환율 |\n|---|---|---|---|---|---|")
+        for r in tm["slot"]:
+            L.append(f"| {r['발송요일']} | {r['발송시간대']} | {r['회차']} | {r['발송']} | {r['전환자']} | {r['전환율%']}% |")
+        L.append("\n고객 시간성향 × 발송 시간대 (결제 이력이 있어 시간성향이 있는 수신자만):\n")
+        L.append("| 시간성향 | 발송시간대 | 발송 | 전환자 | 전환율 |\n|---|---|---|---|---|")
+        for r in tm["pref_x_slot"]:
+            L.append(f"| {r['시간성향']} | {r['발송시간대']} | {r['발송']} | {r['전환자']} | {r['전환율%']}% |")
+        L.append("\n시간성향별 반응 타이밍 (문자 받은 뒤 결제까지):\n")
+        L.append("| 시간성향 | 전환자 | 경과 중앙값(h) | 결제 시각 최빈 |\n|---|---|---|---|")
+        for r in tm["pref_timing"]:
+            pk = r['결제시각_최빈']
+            L.append(f"| {r['시간성향']} | {r['전환자']} | {r['경과중앙값h']} | {'-' if pk is None or pk != pk else str(int(pk)) + '시'} |")
+        L.append("")
     ma = summary["member_admin"]
     L.append(f"\n회원관리 파일 매칭: {ma['matched']:,}명 실명 확인 / 미매칭 {ma['unmatched']:,}명 / 탈퇴 {ma['withdrawn']}명\n")
     L.append("\n세그먼트별 명단은 `crm/output/CRM_마스터_*.xlsx` 의 각 시트에 있다(개인정보 포함, git 미추적).\n")
@@ -1494,7 +1659,8 @@ def write_markdown(summary: dict, path: Path) -> None:
 # ---------------------------------------------------------------------------
 def write_excel(df: pd.DataFrame, seg_frames: dict[str, pd.DataFrame], summary: dict, path: Path,
                 rca: pd.DataFrame | None = None, WB: pd.DataFrame | None = None, WC: pd.DataFrame | None = None,
-                L: pd.DataFrame | None = None, CP: pd.DataFrame | None = None, RPT: pd.DataFrame | None = None) -> None:
+                L: pd.DataFrame | None = None, CP: pd.DataFrame | None = None, RPT: pd.DataFrame | None = None,
+                TMT: dict | None = None) -> None:
     def prep(d: pd.DataFrame) -> pd.DataFrame:
         out = d[EXPORT_COLS].copy()
         out["대표계정"] = out["대표계정"].map({True: "Y", False: "N"})
@@ -1522,9 +1688,14 @@ def write_excel(df: pd.DataFrame, seg_frames: dict[str, pd.DataFrame], summary: 
         if L is not None:
             CP.to_excel(xw, sheet_name="캠페인성과_명단대조", index=False)
             Lx = L.copy(); Lx["발송일"] = Lx["발송일"].dt.date
+            for c in ["발송일시", "전환_결제일시"]:
+                if c in Lx.columns:
+                    Lx[c] = pd.to_datetime(Lx[c]).dt.strftime("%Y-%m-%d %H:%M")
             Lx.to_excel(xw, sheet_name="발송이력", index=False)
             if RPT is not None:
                 RPT.to_excel(xw, sheet_name="발송수신자_프로필", index=False)
+            for nm, t in (TMT or {}).items():
+                t.to_excel(xw, sheet_name=nm[:31], index=False)
         lineup = load_lineup()
         if lineup is not None:
             lineup.to_excel(xw, sheet_name="라인업_현황", index=False)
@@ -1610,7 +1781,8 @@ TARGET_DEFS = [
 
 
 def write_target_book(df: pd.DataFrame, summary: dict, path: Path,
-                      L: pd.DataFrame | None, CP: pd.DataFrame | None, lineup: pd.DataFrame | None) -> None:
+                      L: pd.DataFrame | None, CP: pd.DataFrame | None, lineup: pd.DataFrame | None,
+                      TMT: dict | None = None) -> None:
     base = df[df["대표계정"] & ~df["마케팅제외"]].copy()
     base["연락처_정규화"] = base["연락처_정규화"].fillna("")
     base["_sortkey"] = pd.to_numeric(base["이력_최근성_일"], errors="coerce").fillna(10**6)
@@ -1661,7 +1833,12 @@ def write_target_book(df: pd.DataFrame, summary: dict, path: Path,
             CP.to_excel(xw, sheet_name="Z_캠페인성과", index=False)
         if L is not None:
             Lx = L.copy(); Lx["발송일"] = Lx["발송일"].dt.date
+            for c in ["발송일시", "전환_결제일시"]:
+                if c in Lx.columns:
+                    Lx[c] = pd.to_datetime(Lx[c]).dt.strftime("%Y-%m-%d %H:%M")
             Lx.to_excel(xw, sheet_name="Z_발송이력", index=False)
+        for nm, t in (TMT or {}).items():
+            t.to_excel(xw, sheet_name=("Z_" + nm)[:31], index=False)
         rp = summary.get("recipient_profile")
         if rp:
             rows = []
@@ -1720,6 +1897,7 @@ def main() -> None:
     # 발송 이력
     L = load_send_log()
     if L is not None:
+        L = add_send_times(L)
         L = attach_conversions(L, E)
         SA = send_aggregates(L)
         df = merge_by_key(df, SA, [c for c in SA.columns if c != "연락처_정규화"], key="연락처_정규화")
@@ -1742,13 +1920,15 @@ def main() -> None:
     CP = campaign_performance(L) if L is not None else None
     RP, RPT = (recipient_profile(df, L) if L is not None else (None, None))
     summary["recipient_profile"] = RP
+    TM, TMT = (timing_analysis(L, df) if L is not None else (None, {}))
+    summary["timing"] = TM
     WB, WC = load_web_analytics()
     summary["web"] = web_summary(WB, WC)
 
     cutoff = summary["meta"]["data_cutoff"]
     xlsx = OUT_DIR / f"CRM_마스터_{cutoff}.xlsx"
-    write_excel(df, seg_frames, summary, xlsx, rca, WB, WC, L, CP, RPT)
-    write_target_book(df, summary, OUT_DIR / f"CRM_타겟통합_{cutoff}.xlsx", L, CP, load_lineup())
+    write_excel(df, seg_frames, summary, xlsx, rca, WB, WC, L, CP, RPT, TMT)
+    write_target_book(df, summary, OUT_DIR / f"CRM_타겟통합_{cutoff}.xlsx", L, CP, load_lineup(), TMT)
     (OUT_DIR / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=lambda o: o.isoformat() if hasattr(o, "isoformat") else int(o)), encoding="utf-8")
     write_markdown(summary, OUT_DIR / "분석요약.md")
 
