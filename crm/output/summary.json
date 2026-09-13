@@ -1,16 +1,16 @@
 {
   "meta": {
     "source_file": "회원설문_2026-08-13_전체.xlsx",
-    "generated_at": "2026-09-13 05:24",
+    "generated_at": "2026-09-13 06:05",
     "data_cutoff": "2026-08-13"
   },
   "overview": {
     "total_members": 5716,
-    "unique_members_after_phone_dedup": 5672,
-    "duplicate_groups": 35,
+    "unique_members_after_phone_dedup": 5671,
+    "duplicate_groups": 36,
     "email_present": 5705,
     "phone_present_raw": 4896,
-    "phone_valid": 4878,
+    "phone_valid": 4879,
     "phone_invalid_format": 18,
     "survey_done": 322,
     "survey_done_pct_all": 5.6,
@@ -28,7 +28,7 @@
       "MANAGER": 7,
       "ADMIN": 6
     },
-    "marketing_excluded_accounts": 14
+    "marketing_excluded_accounts": 25
   },
   "by_month": [
     {
@@ -104,9 +104,9 @@
       "가입": 973,
       "설문완료": 111,
       "마케팅동의": 77,
-      "연락처보유": 284,
+      "연락처보유": 285,
       "설문완료율": 11.4,
-      "연락처보유율": 29.2
+      "연락처보유율": 29.3
     },
     {
       "가입플랫폼_주": "이메일",
@@ -534,6 +534,138 @@
       }
     }
   },
+  "snapshots": [
+    {
+      "snapshot": "2026-08-06",
+      "members": 5366,
+      "survey_done": 126,
+      "consent_yes": 95,
+      "consent_no": 80
+    },
+    {
+      "snapshot": "2026-08-13",
+      "members": 5716,
+      "survey_done": 322,
+      "consent_yes": 215,
+      "consent_no": 244,
+      "members_delta": 350,
+      "survey_delta": 196,
+      "consent_delta": 120
+    }
+  ],
+  "member_admin": {
+    "matched": 5122,
+    "unmatched": 594,
+    "withdrawn": 11
+  },
+  "personas": [
+    {
+      "tag": "P01_퇴근후직장인",
+      "framework_name": "문자 페르소나 ① / 세그먼트 ⑪ 퇴근 라이더",
+      "condition": "라이딩 시간대에 '평일 저녁' 포함",
+      "count": 187,
+      "with_consent": 92
+    },
+    {
+      "tag": "P02_주말오전형",
+      "framework_name": "문자 페르소나 ② 주말 짬내는 애아빠(후보)",
+      "condition": "라이딩 시간대에 '주말 오전' 포함 (연령·자녀 정보 없음 → 후보군)",
+      "count": 135,
+      "with_consent": 73
+    },
+    {
+      "tag": "P03_레인조교육생",
+      "framework_name": "문자 페르소나 ③ 교육 수료 실전파 / 우선순위 5점",
+      "condition": "알게 된 경로 = 레인조아카데미",
+      "count": 25,
+      "with_consent": 11
+    },
+    {
+      "tag": "P05_얼리버드",
+      "framework_name": "문자 페르소나 ⑤ / 세그먼트 ⑫ 새벽 라이더",
+      "condition": "라이딩 시간대에 '새벽' 포함",
+      "count": 72,
+      "with_consent": 39
+    },
+    {
+      "tag": "P06_복귀라이더",
+      "framework_name": "문자 페르소나 ⑥ / 세그먼트 ① 휴면 라이더 / 우선순위 5점",
+      "condition": "렌탈 목적에 '오랜만에 라이딩 (재입문)' 포함",
+      "count": 40,
+      "with_consent": 26
+    },
+    {
+      "tag": "P07_투어러",
+      "framework_name": "문자 페르소나 ⑦ 중장년 투어러(후보) / 세그먼트 ⑨ 캠핑·여행족",
+      "condition": "렌탈 목적에 '투어링' 포함 (연령 없음 → Kakao 가입이면 중장년 가능성)",
+      "count": 83,
+      "with_consent": 42
+    },
+    {
+      "tag": "P08_스텝업",
+      "framework_name": "문자 페르소나 ⑧ 스텝업 지망생",
+      "condition": "보유 바이크 쿼터급/미들급",
+      "count": 114,
+      "with_consent": 45
+    },
+    {
+      "tag": "S05_장롱면허입문",
+      "framework_name": "세그먼트 ⑤ 장롱면허 / 보험 소구 1순위",
+      "condition": "경력 3개월 미만 + 바이크 없음, 또는 목적 '입문 전 연습'",
+      "count": 45,
+      "with_consent": 15
+    },
+    {
+      "tag": "S06_기변기추예정",
+      "framework_name": "세그먼트 ⑥ 기변·기추 예정자 / 우선순위 5점",
+      "condition": "바이크 보유 + 구매 계획 1년 내",
+      "count": 135,
+      "with_consent": 65
+    },
+    {
+      "tag": "S10_커플데이트",
+      "framework_name": "세그먼트 ⑩ 커플 / '특별한 경험' 동기그룹",
+      "condition": "렌탈 목적에 '도심 라이딩·데이트(텐덤)' 포함",
+      "count": 33,
+      "with_consent": 12
+    },
+    {
+      "tag": "S13_평일휴무",
+      "framework_name": "세그먼트 ⑬ 평일 휴무 고객",
+      "condition": "라이딩 시간대가 평일 낮만(주말 미선택)",
+      "count": 70,
+      "with_consent": 33
+    },
+    {
+      "tag": "X_유튜브시청자",
+      "framework_name": "확장 타깃 '유튜브 시청자'",
+      "condition": "알게 된 경로 유튜브 또는 모델 선택 이유 '유튜브·SNS 보고'",
+      "count": 41,
+      "with_consent": 22
+    },
+    {
+      "tag": "X_구매직전",
+      "framework_name": "확장 타깃 '구매 직전 고객' / 동기 '사기 전에 확인하고 싶다'",
+      "condition": "구매 계획 3개월 내",
+      "count": 90,
+      "with_consent": 43
+    },
+    {
+      "tag": "X_고가기종시승",
+      "framework_name": "보험 소구 '기변·고가 기종 시승'",
+      "condition": "보유 리터급 또는 희망 모델에 리터급 슈퍼스포츠 언급",
+      "count": 92,
+      "with_consent": 58
+    }
+  ],
+  "motive_groups": {
+    "다시 시작하고 싶다": 81,
+    "사기 전에 확인하고 싶다": 178,
+    "시간이 부족하다": 250,
+    "새로운 취미를 찾는다": 45,
+    "특별한 경험을 원한다": 108,
+    "불안해서 망설인다": 164
+  },
   "segments": [
     {
       "code": "S01",
@@ -627,15 +759,15 @@
       "code": "S12",
       "name": "미설문_연락처보유",
       "description": "설문 미완료 + 유효 연락처. 설문 참여 유도 + 마케팅 동의 요청(정보성 안내로만 접근).",
-      "count": 4549,
-      "with_valid_phone": 4549,
+      "count": 4550,
+      "with_valid_phone": 4550,
       "with_consent": 50
     },
     {
       "code": "S13",
       "name": "미설문_이메일만",
       "description": "설문 미완료 + 연락처 없음. 이메일 기반 설문 유도.",
-      "count": 825,
+      "count": 824,
       "with_valid_phone": 0,
       "with_consent": 0
     },
@@ -643,8 +775,8 @@
       "code": "S14",
       "name": "데이터정리_중복계정",
       "description": "동일 연락처 다중 계정. 계정 통합/대표계정 확정 필요.",
-      "count": 79,
-      "with_valid_phone": 79,
+      "count": 81,
+      "with_valid_phone": 81,
       "with_consent": 1
     },
     {

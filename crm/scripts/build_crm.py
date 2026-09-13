@@ -151,8 +151,10 @@ def load_master(path: Path) -> pd.DataFrame:
     df["설문완료_bool"] = df[COL["survey_done"]].eq("완료")
     df["마케팅상태"] = df[COL["consent"]].fillna("미응답")
     # 관리자/매니저/테스트 계정은 마케팅 대상에서 제외
+    df["탈퇴"] = df[COL["name"]].eq("탈퇴한 사용자") | (df[COL["email"]].isna() & df[COL["phone"]].isna())
     df["마케팅제외"] = (
-        df[COL["role"]].fillna("USER").ne("USER")
+        df["탈퇴"]
+        | df[COL["role"]].fillna("USER").ne("USER")
         | df[COL["consent_src"]].eq("ADMIN_TEST_ACCOUNT")
         | df["이메일_소문자"].str.contains(r"test@|@test\.", regex=True, na=False)
     )
@@ -165,8 +167,66 @@ def load_master(path: Path) -> pd.DataFrame:
     return df
 
 
+def load_member_admin() -> pd.DataFrame | None:
+    """'회원 관리' 내보내기(번호/이름=닉네임/실명/이메일/연락처/권한/소속지점/가입일) 페이지 파일을 모두 합친다."""
+    files = sorted(RAW_DIR.glob("회원관리_*.xlsx"))
+    if not files:
+        return None
+    frames = []
+    for f in files:
+        d = pd.read_excel(f, dtype=str).replace({"-": pd.NA, "": pd.NA})
+        d.columns = [c.strip() for c in d.columns]
+        if "실명" in d.columns:            # 07-24 레이아웃: 이름=닉네임, 실명=본명
+            d = d.rename(columns={"이름": "닉네임"})
+        elif "닉네임" in d.columns:        # 07-30 레이아웃: 이름=본명, 닉네임
+            d = d.rename(columns={"이름": "실명"})
+        d["_src"] = f.name
+        frames.append(d)
+    m = pd.concat(frames, ignore_index=True)
+    m["이메일_소문자"] = m["이메일"].str.strip().str.lower()
+    m = m.drop_duplicates("이메일_소문자", keep="last")
+    return m.rename(columns={"번호": "회원관리_번호", "닉네임": "회원관리_닉네임", "실명": "회원관리_실명",
+                             "연락처": "회원관리_연락처", "가입일": "회원관리_가입일"})[
+        ["이메일_소문자", "회원관리_번호", "회원관리_닉네임", "회원관리_실명", "회원관리_연락처", "회원관리_가입일"]]
+
+
+def merge_member_admin(df: pd.DataFrame, m: pd.DataFrame | None) -> pd.DataFrame:
+    if m is None:
+        df["회원관리_실명"] = pd.NA
+        df["회원관리_번호"] = pd.NA
+        return df
+    df = df.merge(m, on="이메일_소문자", how="left")
+    # 설문 파일의 '이름'이 비어 있거나 다르면 회원관리 실명으로 보강
+    df["실명"] = df["회원관리_실명"].fillna(df[COL["name"]])
+    # 설문 파일에 연락처가 없고 회원관리에 있으면 보강
+    fill = df["연락처_정규화"].isna() & df["회원관리_연락처"].notna()
+    df.loc[fill, "연락처_정규화"] = df.loc[fill, "회원관리_연락처"].map(normalize_phone)
+    df["연락처_유효"] = df["연락처_정규화"].notna()
+    return df
+
+
+def survey_snapshots() -> list[dict]:
+    """raw/ 의 회원설문_<날짜>_전체 파일들을 읽어 날짜별 설문·동의 누적 추이를 만든다."""
+    rows = []
+    for f in sorted(RAW_DIR.glob("회원설문_*_전체.xlsx")):
+        d = pd.read_excel(f, dtype=str, usecols=["가입일", "마케팅수신", "설문완료"]).replace({"-": pd.NA})
+        m = re.search(r"(\d{4}-\d{2}-\d{2})", f.name)
+        rows.append({
+            "snapshot": m.group(1) if m else f.name,
+            "members": int(len(d)),
+            "survey_done": int(d["설문완료"].eq("완료").sum()),
+            "consent_yes": int(d["마케팅수신"].eq("동의").sum()),
+            "consent_no": int(d["마케팅수신"].eq("미동의").sum()),
+        })
+    for i in range(1, len(rows)):
+        rows[i]["members_delta"] = rows[i]["members"] - rows[i - 1]["members"]
+        rows[i]["survey_delta"] = rows[i]["survey_done"] - rows[i - 1]["survey_done"]
+        rows[i]["consent_delta"] = rows[i]["consent_yes"] - rows[i - 1]["consent_yes"]
+    return rows
+
+
 def load_extra_sources() -> dict[str, pd.DataFrame]:
-    """추후 업로드되는 예약/렌탈/결제 데이터 병합 지점. 현재는 비어 있다."""
+    """추후 업로드되는 예약/렌탈/결제(세분화_기준표적용.xlsx 등) 병합 지점. 현재는 비어 있다."""
     return {}
 
 
@@ -220,6 +280,77 @@ def lead_tier(r: pd.Series) -> str:
     return "COLD"
 
 
+# 전략 문서(고객세분화_타겟팅 2026-07, 광고문자 운영뼈대 v2) 체계에 맞춘 페르소나 태그.
+# 설문 응답으로 추정 가능한 것만 정의한다. 렌탈 이용 데이터가 붙으면 조건을 실측 기반으로 교체한다.
+def _has(col, val):
+    return lambda d: d[col + "_list"].map(lambda l: val in l)
+
+
+PERSONA_DEFS = [
+    # (태그, 전략문서 명칭, 근거 조건 설명, 필터)
+    ("P01_퇴근후직장인", "문자 페르소나 ① / 세그먼트 ⑪ 퇴근 라이더",
+     "라이딩 시간대에 '평일 저녁' 포함", _has(COL["q_when"], "평일 저녁")),
+    ("P02_주말오전형", "문자 페르소나 ② 주말 짬내는 애아빠(후보)",
+     "라이딩 시간대에 '주말 오전' 포함 (연령·자녀 정보 없음 → 후보군)", _has(COL["q_when"], "주말 오전")),
+    ("P03_레인조교육생", "문자 페르소나 ③ 교육 수료 실전파 / 우선순위 5점",
+     "알게 된 경로 = 레인조아카데미", _has(COL["q_source"], "레인조아카데미")),
+    ("P05_얼리버드", "문자 페르소나 ⑤ / 세그먼트 ⑫ 새벽 라이더",
+     "라이딩 시간대에 '새벽' 포함", _has(COL["q_when"], "새벽")),
+    ("P06_복귀라이더", "문자 페르소나 ⑥ / 세그먼트 ① 휴면 라이더 / 우선순위 5점",
+     "렌탈 목적에 '오랜만에 라이딩 (재입문)' 포함", _has(COL["q_purpose"], "오랜만에 라이딩 (재입문)")),
+    ("P07_투어러", "문자 페르소나 ⑦ 중장년 투어러(후보) / 세그먼트 ⑨ 캠핑·여행족",
+     "렌탈 목적에 '투어링' 포함 (연령 없음 → Kakao 가입이면 중장년 가능성)", _has(COL["q_purpose"], "투어링 (당일/박투어)")),
+    ("P08_스텝업", "문자 페르소나 ⑧ 스텝업 지망생",
+     "보유 바이크 쿼터급/미들급", lambda d: d["보유바이크_급"].isin(["쿼터급", "미들급"])),
+    ("S05_장롱면허입문", "세그먼트 ⑤ 장롱면허 / 보험 소구 1순위",
+     "경력 3개월 미만 + 바이크 없음, 또는 목적 '입문 전 연습'",
+     lambda d: (d[COL["q_exp"]].eq("3개월 미만") & d["보유바이크_급"].eq("없음")) | _has(COL["q_purpose"], "입문 전 연습")(d)),
+    ("S06_기변기추예정", "세그먼트 ⑥ 기변·기추 예정자 / 우선순위 5점",
+     "바이크 보유 + 구매 계획 1년 내", lambda d: d["바이크보유"].eq(True) & d[COL["q_buy"]].isin(["3개월 내", "6개월 내", "1년 내"])),
+    ("S10_커플데이트", "세그먼트 ⑩ 커플 / '특별한 경험' 동기그룹",
+     "렌탈 목적에 '도심 라이딩·데이트(텐덤)' 포함", _has(COL["q_purpose"], "도심 라이딩·데이트(텐덤)")),
+    ("S13_평일휴무", "세그먼트 ⑬ 평일 휴무 고객",
+     "라이딩 시간대가 평일 낮만(주말 미선택)",
+     lambda d: d[COL["q_when"] + "_list"].map(lambda l: "평일 낮" in l and not ({"주말 오전", "주말 오후"} & set(l)))),
+    ("X_유튜브시청자", "확장 타깃 '유튜브 시청자'",
+     "알게 된 경로 유튜브 또는 모델 선택 이유 '유튜브·SNS 보고'",
+     lambda d: _has(COL["q_source"], "유튜브")(d) | _has(COL["q_reason"], "유튜브·SNS 보고")(d)),
+    ("X_구매직전", "확장 타깃 '구매 직전 고객' / 동기 '사기 전에 확인하고 싶다'",
+     "구매 계획 3개월 내", lambda d: d[COL["q_buy"]].eq("3개월 내")),
+    ("X_고가기종시승", "보험 소구 '기변·고가 기종 시승'",
+     "보유 리터급 또는 희망 모델에 리터급 슈퍼스포츠 언급",
+     lambda d: d["보유바이크_급"].eq("리터급") | d[COL["q_next"]].fillna("").str.lower().str.contains(
+         r"s1000|m1000|v4|r1\b|zx.?10|파니갈레|1300", regex=True)),
+]
+
+MOTIVE_GROUPS = {
+    "다시 시작하고 싶다": ["P06_복귀라이더", "S05_장롱면허입문"],
+    "사기 전에 확인하고 싶다": ["S06_기변기추예정", "X_구매직전"],
+    "시간이 부족하다": ["P01_퇴근후직장인", "P02_주말오전형"],
+    "새로운 취미를 찾는다": ["S05_장롱면허입문"],
+    "특별한 경험을 원한다": ["S10_커플데이트", "P07_투어러"],
+    "불안해서 망설인다": ["S05_장롱면허입문", "P06_복귀라이더", "X_고가기종시승"],
+}
+
+
+def assign_personas(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, pd.Series]]:
+    tags = [[] for _ in range(len(df))]
+    masks: dict[str, pd.Series] = {}
+    for tag, _name, _why, fn in PERSONA_DEFS:
+        m = fn(df).fillna(False).astype(bool) & df["설문완료_bool"] & ~df["마케팅제외"]
+        masks[tag] = m
+        for pos in range(len(df)):
+            if m.iloc[pos]:
+                tags[pos].append(tag)
+    df["페르소나"] = [",".join(t) for t in tags]
+    motive = []
+    for t in tags:
+        ts = set(t)
+        motive.append(",".join(g for g, members in MOTIVE_GROUPS.items() if ts & set(members)))
+    df["동기그룹"] = motive
+    return df, masks
+
+
 SEGMENT_DEFS = [
     # (코드, 이름, 설명/액션, 필터함수)
     ("S01", "HOT_구매3개월내_동의",
@@ -271,15 +402,15 @@ SEGMENT_DEFS = [
 ]
 
 EXPORT_COLS = [
-    COL["no"], COL["name"], COL["nick"], COL["email"], "연락처_정규화", "연락처_원본", COL["platform"], COL["role"],
+    COL["no"], COL["name"], "실명", COL["nick"], COL["email"], "연락처_정규화", "연락처_원본", COL["platform"], COL["role"],
     COL["branch"], COL["fav_branch"], COL["joined"], COL["consent"], COL["consent_at"], COL["consent_src"],
-    COL["survey_done"], COL["survey_at"], "리드스코어", "리드등급", "세그먼트", "중복그룹", "대표계정", "마케팅제외",
+    COL["survey_done"], COL["survey_at"], "리드스코어", "리드등급", "세그먼트", "페르소나", "동기그룹", "중복그룹", "대표계정", "마케팅제외", "탈퇴", "회원관리_번호",
     COL["q_source"], COL["q_exp"], "보유바이크_급", "보유바이크_모델", COL["q_purpose"], COL["q_reason"],
     COL["q_buy"], COL["q_when"], COL["q_factor"], COL["q_next"], COL["q_wish"],
 ]
 
 
-def assign_segments(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
+def assign_segments(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, pd.Series]]:
     df = df.copy()
     df["리드스코어"] = df.apply(lead_score, axis=1)
     df["리드등급"] = df.apply(lead_tier, axis=1)
@@ -294,8 +425,7 @@ def assign_segments(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, pd.DataFr
             if mask.iloc[pos]:
                 seg_tags[pos].append(code)
     df["세그먼트"] = [",".join(t) for t in seg_tags]
-    seg_frames = {k: df[m] for k, m in masks.items()}
-    return df, seg_frames
+    return df, masks
 
 
 # ---------------------------------------------------------------------------
@@ -417,6 +547,18 @@ def build_summary(df: pd.DataFrame, seg_frames: dict[str, pd.DataFrame], src: Pa
                 s[COL["q_exp"]].reindex(s[COL["q_factor"] + "_list"].explode().index),
             ).reindex(columns=EXP_ORDER).fillna(0).astype(int).to_dict(orient="index"),
         },
+        "snapshots": survey_snapshots(),
+        "member_admin": {
+            "matched": int(df["회원관리_번호"].notna().sum()),
+            "unmatched": int(df["회원관리_번호"].isna().sum()),
+            "withdrawn": int(df["탈퇴"].sum()),
+        },
+        "personas": [
+            {"tag": tag, "framework_name": name, "condition": why,
+             "count": int(len(seg_frames[tag])), "with_consent": int((seg_frames[tag][COL["consent"]] == "동의").sum())}
+            for tag, name, why, _ in PERSONA_DEFS
+        ],
+        "motive_groups": {g: int(df["동기그룹"].str.contains(g, regex=False).sum()) for g in MOTIVE_GROUPS},
         "segments": [
             {"code": code, "name": name, "description": desc, "count": int(len(seg_frames[f"{code}_{name}"])),
              "with_valid_phone": int(seg_frames[f"{code}_{name}"]["연락처_유효"].sum()),
@@ -510,6 +652,19 @@ def write_markdown(summary: dict, path: Path) -> None:
     L.append("| 코드 | 세그먼트 | 인원 | 유효연락처 | 마케팅동의 | 액션 |\n|---|---|---|---|---|---|")
     for sg in summary["segments"]:
         L.append(f"| {sg['code']} | {sg['name']} | {sg['count']:,} | {sg['with_valid_phone']:,} | {sg['with_consent']:,} | {sg['description']} |")
+    if len(summary["snapshots"]) > 1:
+        L.append("\n## 7-1. 스냅샷 추이 (회원 설문 내보내기 날짜별 누적)\n")
+        L.append("| 기준일 | 회원 | 설문완료 | 동의 | 미동의 | 회원 증가 | 설문 증가 | 동의 증가 |\n|---|---|---|---|---|---|---|---|")
+        for r in summary["snapshots"]:
+            L.append(f"| {r['snapshot']} | {r['members']:,} | {r['survey_done']} | {r['consent_yes']} | {r['consent_no']} | "
+                     f"{r.get('members_delta', '')} | {r.get('survey_delta', '')} | {r.get('consent_delta', '')} |")
+    L.append("\n## 8. 전략 문서 페르소나 매핑 (설문 완료자 기준)\n")
+    L.append("| 태그 | 전략 문서 명칭 | 데이터 조건 | 인원 | 마케팅동의 |\n|---|---|---|---|---|")
+    for p in summary["personas"]:
+        L.append(f"| {p['tag']} | {p['framework_name']} | {p['condition']} | {p['count']} | {p['with_consent']} |")
+    L.append("\n동기 그룹별 인원(중복 포함): " + ", ".join(f"{g} {n}명" for g, n in summary["motive_groups"].items()))
+    ma = summary["member_admin"]
+    L.append(f"\n회원관리 파일 매칭: {ma['matched']:,}명 실명 확인 / 미매칭 {ma['unmatched']:,}명 / 탈퇴 {ma['withdrawn']}명\n")
     L.append("\n세그먼트별 명단은 `crm/output/CRM_마스터_*.xlsx` 의 각 시트에 있다(개인정보 포함, git 미추적).\n")
     path.write_text("\n".join(L), encoding="utf-8")
 
@@ -522,6 +677,7 @@ def write_excel(df: pd.DataFrame, seg_frames: dict[str, pd.DataFrame], summary: 
         out = d[EXPORT_COLS].copy()
         out["대표계정"] = out["대표계정"].map({True: "Y", False: "N"})
         out["마케팅제외"] = out["마케팅제외"].map({True: "Y", False: ""})
+        out["탈퇴"] = out["탈퇴"].map({True: "Y", False: ""})
         return out.sort_values(["리드스코어", COL["joined"]], ascending=[False, False])
 
     with pd.ExcelWriter(path, engine="openpyxl") as xw:
@@ -549,8 +705,13 @@ def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     df = load_master(src)
+    df = merge_member_admin(df, load_member_admin())
     df = mark_duplicates(df)
-    df, seg_frames = assign_segments(df)
+    df, seg_masks = assign_segments(df)
+    df, persona_masks = assign_personas(df)
+    seg_frames = {k: df[m] for k, m in seg_masks.items()}
+    for tag, _n, _w, _f in PERSONA_DEFS:
+        seg_frames[tag] = df[persona_masks[tag]]
     summary = build_summary(df, seg_frames, src)
 
     cutoff = summary["meta"]["data_cutoff"]
