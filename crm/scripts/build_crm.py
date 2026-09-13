@@ -657,13 +657,18 @@ def load_send_log() -> pd.DataFrame | None:
     for f in sorted(RAW_DIR.glob("발송명단_*.xlsx")):
         m = re.search(r"(\d{4}-\d{2}-\d{2})", f.name)
         day = m.group(1) if m else None
-        camp, cname, sheets, holdout = meta.get(day, (f.stem, f.stem, None, None))
+        # 등록된 회차가 없으면 파일명 규칙으로 자동 인식: 발송명단_<YYYY-MM-DD>_<캠페인코드>.xlsx
+        #  - '연락처'/'전화번호' 컬럼이 있는 시트 = 수신자 명단 (단, 시트명에 제외·보류·참고·요약·문안·설명·라인업·차종·체크·자동화·검증·KPI 가 있으면 건너뜀)
+        #  - 시트명에 '홀드아웃' 이 있으면 대조군
+        auto_code = f.stem.split("_", 2)[2] if f.stem.count("_") >= 2 else f.stem
+        camp, cname, sheets, holdout = meta.get(day, (auto_code, f"{day} {auto_code}", None, None))
+        skip_words = ("제외", "보류", "참고", "요약", "문안", "설명", "라인업", "차종", "체크", "자동화", "검증", "KPI", "기존예약")
         xl = pd.ExcelFile(f)
         for sh in xl.sheet_names:
-            is_holdout = holdout is not None and sh == holdout
+            is_holdout = (holdout is not None and sh == holdout) or (holdout is None and "홀드아웃" in sh)
             if sheets is not None and sh not in sheets and not is_holdout:
                 continue
-            if sheets is None and (sh.startswith("발송요약") or sh.startswith(("①", "②", "④"))):
+            if sheets is None and not is_holdout and (any(w in sh for w in skip_words) or sh.startswith(("①", "②", "④"))):
                 continue
             d = pd.read_excel(f, sheet_name=sh, dtype=str)
             if "전화번호" in d.columns:
