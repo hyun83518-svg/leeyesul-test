@@ -1534,6 +1534,148 @@ def write_excel(df: pd.DataFrame, seg_frames: dict[str, pd.DataFrame], summary: 
             ws.freeze_panes = "A2"
 
 
+# ---------------------------------------------------------------------------
+# 타겟 통합본 (한 파일에 타겟별 시트)
+# ---------------------------------------------------------------------------
+TARGET_COLS = [
+    "실명", COL["nick"], "연락처_정규화", COL["email"], "주지점", "마케팅상태", "발송가능", "생애단계",
+    "이력_이용횟수", "이력_이용금액", "이력_최근이용일", "이력_최근성_일", "시간성향", "주말성향", "취향장르", "취향브랜드", "이용모델",
+    "이력_최대배기량", "평균이용시간", "VIP산정", "RCA구분", "발송횟수", "최근발송일", "발송캠페인", "발송후전환",
+    COL["q_buy"], COL["q_exp"], COL["q_when"], COL["q_purpose"], "페르소나", "세그먼트", COL["joined"],
+]
+
+_ACT = "활성"; _DOR = "휴면"; _RISK = "이탈위험"
+
+
+def _genre_in(vals):
+    return lambda d: d["취향장르"].isin(vals)
+
+
+# (코드, 이름, 우선순위, 근거(실측), 권장 오퍼/문안 방향, 권장 발송 시점, 필터)
+TARGET_DEFS = [
+    ("A1", "활성_야간형", "A",
+     "심야형 전환 11.3%(최고), 9/4 용산 야간경험 8.6%(9일치)", "금·토 심야 연장·야간 라이딩 소구", "발송 당일 18:30~19:30 (목·금)",
+     lambda d: d["생애단계"].eq(_ACT) & d["시간성향"].eq("심야형")),
+    ("A2", "활성_최근30일이용", "A",
+     "발송 시점 활성 9.7% vs 휴면 2.5%·미이용 1.6%", "이달의 라인업·재방문 오퍼(2시간 무료 등)", "토 10:00 또는 목·금 16:00",
+     lambda d: d["생애단계"].eq(_ACT)),
+    ("A3", "활성_미들급_스텝업", "A",
+     "미들급 이용자 10.9% > 리터급 6.5% > 쿼터급 4.7%", "\"다음 단계\" 리터급 시승 제안 (현재 라인업 CBR1000RR-R·TIGER 900)", "토 10:00",
+     lambda d: d["생애단계"].isin([_ACT, _RISK]) & d["이력_최대배기량"].eq("미들급")),
+    ("A4", "동의신규_미거래", "A",
+     "9/4 D그룹 439명 1.8%(128만 원, 9일치), 8/22 동의 신규 2.2%. 동의자 전환 5.3% vs 미응답 2.2%", "첫 시승 오퍼(첫라이딩 9,900·시간 추가)", "금 15:00 / 토 10:00",
+     lambda d: d["마케팅상태"].eq("동의") & ~d["이력고객"]),
+    ("A5", "활성휴면_스포츠네이키드크루저어드벤처", "A",
+     "장르별 전환 스포츠 12.6%·크루저 11.4%·네이키드 10.4%·어드벤처 8.8%", "장르 동일 현재 차종으로 소구 (675SR-R·450CL-C·450MT·TIGER 900)", "토 10:00",
+     lambda d: d["생애단계"].isin([_ACT, _DOR]) & _genre_in(["스포츠", "네이키드", "크루저", "어드벤처", "슈퍼스포츠"])(d)),
+    ("A6", "지점_분당_결제고객", "A",
+     "분당 14.3%(56명 중 8명) 지점 최고", "분당 얼리버드·CFMOTO 라인 (평일 아침)", "목·금 10:00",
+     lambda d: d["이력고객"] & d["주지점"].eq("Bundang")),
+    ("A7", "지점_대구진주제주_결제고객", "A",
+     "소규모 지점 회차용. 제주 5명 중 3명 전환", "지점별 라인업 안내", "토 10:00",
+     lambda d: d["이력고객"] & d["주지점"].isin(["Daegu", "Jinju", "Jeju"])),
+    ("B1", "휴면_반응장르", "B",
+     "휴면 전체 2.5%. 반응 장르(스포츠·네이키드·크루저·어드벤처·슈퍼스포츠)만 추림", "라인업 교체·신차 입고 명분 + 정액 오퍼", "월 1회 대량 회차",
+     lambda d: d["생애단계"].eq(_DOR) & _genre_in(["스포츠", "네이키드", "크루저", "어드벤처", "슈퍼스포츠"])(d)),
+    ("B2", "휴면_투어러클래식", "B",
+     "투어러 0.8%·클래식 6.8%. 문자 저반응, BMW 투어러 부재 영향", "신차(투어러·클래식) 입고 시에만 발송. 평소엔 제외", "입고 시",
+     lambda d: d["생애단계"].eq(_DOR) & _genre_in(["투어러", "클래식"])(d)),
+    ("B3", "이탈위험_단골", "B",
+     "이탈위험 0.6%. 문자로는 안 돌아옴", "지점 전화·개인 메시지(LTV 상위부터)", "문자 대신 전화",
+     lambda d: d["생애단계"].eq(_RISK)),
+    ("B4", "첫이용_30일_자동화", "B",
+     "CP011. 첫 이용 27~35일 경과 1회 이용자", "\"다음은 같은 장르의 [현재 차종]\" 재방문 안내", "상시 자동(이용 D+27~30)",
+     lambda d: d["이력고객"] & d["이력_이용횟수"].eq(1) & pd.to_numeric(d["이력_최근성_일"], errors="coerce").between(27, 35)),
+    ("B5", "프로모전환자_재발송금지", "B",
+     "CP009. 프로모코드로 결제한 고객. 동일 할인 광고 재발송 금지 그룹", "감사 + 재방문 혜택(다른 오퍼)", "회차 후 1주",
+     lambda d: d["프로모사용"].fillna(False).astype(bool) if "프로모사용" in d.columns else pd.Series(False, index=d.index)),
+    ("B6", "VIP", "B",
+     "3회+ / 순결제 20만+ / RCA교차+결제 (최종세분화명단 정의)", "서킷데이·신차 우선 시승 초대, 친구 소개 프로그램", "회차별 우선 포함",
+     lambda d: d["VIP산정"]),
+    ("B7", "RCA교차_수강경험", "B",
+     "레인조 수강 1회+ & 아르테파인 회원. 문서 규칙: 경험 소구만, 가격 소구 금지", "\"배운 그 감각, 도로에서\" + 같은 장르 현재 차종", "수료 후 D+3~7 오전 10:00",
+     lambda d: d["RCA회원"] & pd.to_numeric(d["RCA_수강횟수"], errors="coerce").fillna(0).ge(1)),
+    ("C1", "미이용_회원_발송가능", "C",
+     "이력 없는 회원 1.6%. 대량 회차·지점 미상. 최근 가입순 정렬", "첫 시승·초회 혜택. 지점 링크로 지점 분류 겸함", "월 1회 대량 (동의자 우선)",
+     lambda d: ~d["이력고객"]),
+    ("X1", "참고_미동의_단골_발송불가", "X",
+     "미동의자 26명 중 9명 결제(34.6%)했지만 광고 발송 불가", "예약 확인·반납 안내 등 거래 메시지에 재방문 정보만", "발송 금지",
+     lambda d: d["마케팅상태"].eq("미동의") & d["이력고객"]),
+]
+
+
+def write_target_book(df: pd.DataFrame, summary: dict, path: Path,
+                      L: pd.DataFrame | None, CP: pd.DataFrame | None, lineup: pd.DataFrame | None) -> None:
+    base = df[df["대표계정"] & ~df["마케팅제외"]].copy()
+    base["연락처_정규화"] = base["연락처_정규화"].fillna("")
+    base["_sortkey"] = pd.to_numeric(base["이력_최근성_일"], errors="coerce").fillna(10**6)
+
+    def prep(d: pd.DataFrame) -> pd.DataFrame:
+        out = d.sort_values(["발송가능", "_sortkey", COL["joined"]], ascending=[False, True, False])[TARGET_COLS].copy()
+        for c in ["발송가능", "VIP산정", "발송후전환"]:
+            out[c] = out[c].map({True: "Y", False: ""})
+        return out.rename(columns={"연락처_정규화": "연락처", COL["nick"]: "닉네임"})
+
+    catalog = []
+    frames = {}
+    for code, name, pri, why, offer, when, fn in TARGET_DEFS:
+        mask = fn(base).fillna(False).astype(bool)
+        if code != "X1":
+            mask = mask & base["발송가능"]
+        d = base[mask]
+        frames[f"{code}_{name}"] = prep(d)
+        catalog.append({"우선순위": pri, "코드": code, "타겟": name, "인원": int(len(d)),
+                        "동의": int((d["마케팅상태"] == "동의").sum()), "미응답": int((d["마케팅상태"] == "미응답").sum()),
+                        "이력고객": int(d["이력고객"].sum()), "9월 발송 이력 있음": int(d.get("발송_2026-09", pd.Series(0, index=d.index)).fillna(0).gt(0).sum()),
+                        "실측 근거": why, "권장 오퍼·문안": offer, "권장 발송 시점": when})
+    cat = pd.DataFrame(catalog)
+
+    o = summary["overview"]; hs = summary.get("history") or {}; ss = summary.get("sends") or {}
+    header = [
+        ["아르테파인 CRM 타겟 통합본", ""],
+        ["생성", summary["meta"]["generated_at"]],
+        ["회원 기준", f"회원설문 {summary['meta']['source_file']} · 회원 {o['total_members']:,} · 설문 {o['survey_done']:,} · 동의 {o['consent_yes']:,}"],
+        ["이용 이력", f"{hs.get('period', '-')} · 유효 이벤트 {hs.get('valid_events', 0):,} · 이용 고객 {hs.get('customers', 0):,}"],
+        ["발송 이력", f"정밀 타겟 {ss.get('sends', 0):,}건 · 수신자 {ss.get('recipients', 0):,}명 · 홀드아웃 {ss.get('holdout', 0)}명 · 대량(7/11) 회원 3,517·RCA 5,005"],
+        ["발송 정책", "동의자 + 설문 도입(8/2) 전 가입한 미응답자 발송. 미동의·수신거부·직원/테스트/탈퇴 제외. (광고) 표기·080 수신거부·08~20시 준수"],
+        ["발송 가능 풀", f"{o.get('sendable_policy', 0):,}명 (대표계정·유효 연락처 기준)"],
+        ["전환 정의", "발송 후 14일 내 유효 결제. 생애단계는 발송 시점 기준. 활성 ≤30일 / 이탈위험 2회+ & 31~90일 / 그 외 휴면"],
+        ["시트 안내", "각 타겟 시트는 발송가능 → 최근 이용순 정렬. 같은 사람이 여러 타겟에 들어갈 수 있으니 회차 배정 시 상위 우선순위 1통만 (월 2통 상한)"],
+        ["", ""],
+    ]
+    with pd.ExcelWriter(path, engine="openpyxl") as xw:
+        pd.DataFrame(header).to_excel(xw, sheet_name="0_요약", index=False, header=False)
+        cat.to_excel(xw, sheet_name="0_요약", index=False, startrow=len(header))
+        for name, d in frames.items():
+            d.to_excel(xw, sheet_name=name[:31], index=False)
+        prep(base).to_excel(xw, sheet_name="Z_고객마스터_발송가능순", index=False)
+        excl = df[df["마케팅제외"] | df["마케팅상태"].eq("미동의")][["실명", "연락처_정규화", COL["email"], "마케팅상태", "수신거부", "탈퇴", COL["role"]]].copy()
+        excl["사유"] = excl.apply(lambda r: "수신거부" if r["수신거부"] else ("탈퇴" if r["탈퇴"] else ("미동의" if r["마케팅상태"] == "미동의" else "직원/테스트")), axis=1)
+        excl.rename(columns={"연락처_정규화": "연락처"}).drop(columns=["수신거부", "탈퇴"]).to_excel(xw, sheet_name="Z_제외명단", index=False)
+        if CP is not None:
+            CP.to_excel(xw, sheet_name="Z_캠페인성과", index=False)
+        if L is not None:
+            Lx = L.copy(); Lx["발송일"] = Lx["발송일"].dt.date
+            Lx.to_excel(xw, sheet_name="Z_발송이력", index=False)
+        rp = summary.get("recipient_profile")
+        if rp:
+            rows = []
+            for dcol, tbl in rp["by_dimension"].items():
+                for k, v in tbl.items():
+                    rows.append({"차원": dcol, "값": k, "발송": v["발송"], "전환자": v["전환자"], "전환율%": v["전환율%"]})
+            pd.DataFrame(rows).to_excel(xw, sheet_name="Z_실측_차원별전환율", index=False)
+        if lineup is not None:
+            lineup.to_excel(xw, sheet_name="Z_라인업", index=False)
+        for ws in xw.book.worksheets:
+            for col_cells in ws.columns:
+                width = max(len(str(c.value)) if c.value is not None else 0 for c in col_cells[:300])
+                ws.column_dimensions[col_cells[0].column_letter].width = min(max(8, width * 1.3), 60)
+            ws.freeze_panes = "A2" if not ws.title.startswith("0_") else None
+    print(f"target : {path}")
+    for r in catalog:
+        print(f"  {r['우선순위']} {r['코드']} {r['타겟']:<28} {r['인원']:>5}  동의={r['동의']:>4} 미응답={r['미응답']:>4} 이력고객={r['이력고객']:>4}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--master", type=Path, help="기준 회원 설문 xlsx (생략 시 raw/ 최신 '전체' 파일)")
@@ -1601,6 +1743,7 @@ def main() -> None:
     cutoff = summary["meta"]["data_cutoff"]
     xlsx = OUT_DIR / f"CRM_마스터_{cutoff}.xlsx"
     write_excel(df, seg_frames, summary, xlsx, rca, WB, WC, L, CP, RPT)
+    write_target_book(df, summary, OUT_DIR / f"CRM_타겟통합_{cutoff}.xlsx", L, CP, load_lineup())
     (OUT_DIR / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=lambda o: o.isoformat() if hasattr(o, "isoformat") else int(o)), encoding="utf-8")
     write_markdown(summary, OUT_DIR / "분석요약.md")
 
