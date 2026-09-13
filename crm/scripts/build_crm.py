@@ -1730,7 +1730,7 @@ def _genre_in(vals):
 # (코드, 이름, 우선순위, 근거(실측), 권장 오퍼/문안 방향, 권장 발송 시점, 필터)
 TARGET_DEFS = [
     ("A1", "활성_야간형", "A",
-     "심야형 전환 11.3%(최고), 9/4 용산 야간경험 8.6%(9일치)", "금·토 심야 연장·야간 라이딩 소구", "발송 당일 18:30~19:30 (목·금)",
+     "심야형 전환 11.3%(최고), 9/4 용산 야간경험 8.6%(9일치)", "금·토 심야 연장·야간 라이딩 소구", "토 10:00 또는 평일 11~13시 (심야형도 낮에 받은 문자로 밤에 결제)",
      lambda d: d["생애단계"].eq(_ACT) & d["시간성향"].eq("심야형")),
     ("A2", "활성_최근30일이용", "A",
      "발송 시점 활성 9.7% vs 휴면 2.5%·미이용 1.6%", "이달의 라인업·재방문 오퍼(2시간 무료 등)", "토 10:00 또는 목·금 16:00",
@@ -1806,6 +1806,7 @@ def write_target_book(df: pd.DataFrame, summary: dict, path: Path,
                         "이력고객": int(d["이력고객"].sum()), "9월 발송 이력 있음": int(d.get("발송_2026-09", pd.Series(0, index=d.index)).fillna(0).gt(0).sum()),
                         "실측 근거": why, "권장 오퍼·문안": offer, "권장 발송 시점": when})
     cat = pd.DataFrame(catalog)
+    summary["targets"] = catalog
 
     o = summary["overview"]; hs = summary.get("history") or {}; ss = summary.get("sends") or {}
     header = [
@@ -1856,6 +1857,85 @@ def write_target_book(df: pd.DataFrame, summary: dict, path: Path,
     print(f"target : {path}")
     for r in catalog:
         print(f"  {r['우선순위']} {r['코드']} {r['타겟']:<28} {r['인원']:>5}  동의={r['동의']:>4} 미응답={r['미응답']:>4} 이력고객={r['이력고객']:>4}")
+
+
+# ---------------------------------------------------------------------------
+# 발송용 얇은 워크북 (읽기·발송 실무용, 컬럼 9개)
+# ---------------------------------------------------------------------------
+SLIM_COLS = ["실명", "연락처", "주지점", "생애단계", "최근이용일", "시간성향", "취향장르", "마케팅상태", "이번달수신"]
+
+
+def write_slim_book(df: pd.DataFrame, summary: dict, path: Path) -> None:
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+
+    base = df[df["대표계정"] & ~df["마케팅제외"]].copy()
+    ym = pd.Timestamp(summary["meta"]["generated_at"]).strftime("%Y-%m")
+    month_col = f"발송_{ym}"
+    base["이번달수신"] = base[month_col].fillna(0).astype(int) if month_col in base.columns else 0
+    base["연락처"] = base["연락처_정규화"]
+    base["최근이용일"] = base["이력_최근이용일"]
+    base["주지점"] = base["주지점"].map({"Yongsan": "용산", "Incheon": "인천", "Bundang": "분당", "Daegu": "대구", "Jeju": "제주", "Jinju": "진주"}).fillna(base["주지점"])
+    base["_sort"] = pd.to_numeric(base["이력_최근성_일"], errors="coerce").fillna(10**6)
+
+    def prep(d):
+        d = d.sort_values(["발송가능", "_sort"], ascending=[False, True])
+        out = d[SLIM_COLS].copy()
+        out["생애단계"] = out["생애단계"].fillna("미이용")
+        return out.fillna("")
+
+    catalog = []
+    frames = {}
+    for code, name, pri, why, offer, when, fn in TARGET_DEFS:
+        mask = fn(base).fillna(False).astype(bool)
+        if code != "X1":
+            mask = mask & base["발송가능"]
+        d = base[mask]
+        frames[f"{code}_{name}"] = prep(d)
+        catalog.append({"우선순위": pri, "타겟": f"{code} {name}", "인원": len(d), "동의": int((d["마케팅상태"] == "동의").sum()),
+                        "이번달 이미 받은 사람": int(d["이번달수신"].gt(0).sum()), "왜 이 타겟인가": why, "무엇을 보내나": offer, "언제 보내나": when})
+    cat = pd.DataFrame(catalog)
+
+    hdr_font = Font(bold=True, color="FFFFFF"); hdr_fill = PatternFill("solid", fgColor="1F4E79")
+    pri_fill = {"A": PatternFill("solid", fgColor="E2F0D9"), "B": PatternFill("solid", fgColor="FFF2CC"),
+                "C": PatternFill("solid", fgColor="EDEDED"), "X": PatternFill("solid", fgColor="F8CBAD")}
+    with pd.ExcelWriter(path, engine="openpyxl") as xw:
+        intro = pd.DataFrame([
+            ["아르테파인 CRM 발송용 타겟 명단", ""],
+            ["기준", f"회원 {summary['meta']['source_file']} · 결제 ~{summary.get('payments', {}).get('period', '').split('~')[-1].strip()} · 생성 {summary['meta']['generated_at']}"],
+            ["쓰는 법", "① 아래 표에서 이번 회차 타겟을 고른다 ② 해당 시트의 명단을 문자 발송 툴에 붙여 넣는다 ③ 같은 사람이 여러 시트에 있으면 우선순위 높은 한 곳에서만 보낸다(월 2통 상한) ④ '이번달수신'이 2 이상이면 이번 달은 건너뛴다"],
+            ["발송 규칙", "동의자 + 설문 도입 전 미응답자만 포함됨. 미동의·수신거부·직원·탈퇴는 이미 빠져 있음. (광고) 표기·080 수신거부·08~20시 발송"],
+            ["", ""],
+        ])
+        intro.to_excel(xw, sheet_name="0_타겟고르기", index=False, header=False)
+        cat.to_excel(xw, sheet_name="0_타겟고르기", index=False, startrow=len(intro))
+        ws = xw.book["0_타겟고르기"]
+        ws["A1"].font = Font(bold=True, size=14)
+        for c in ws[len(intro) + 1]:
+            c.font = hdr_font; c.fill = hdr_fill
+        for r in ws.iter_rows(min_row=len(intro) + 2, max_row=ws.max_row):
+            f = pri_fill.get(str(r[0].value), None)
+            if f:
+                for c in r[:3]:
+                    c.fill = f
+        for i, w in enumerate([8, 34, 7, 7, 12, 46, 46, 26], start=1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+        for r in ws.iter_rows(min_row=len(intro) + 2, max_row=ws.max_row):
+            for c in r:
+                c.alignment = Alignment(wrap_text=True, vertical="top")
+        ws.freeze_panes = ws.cell(row=len(intro) + 2, column=1)
+
+        for name, d in frames.items():
+            sh = name[:31]
+            d.to_excel(xw, sheet_name=sh, index=False)
+            w = xw.book[sh]
+            for c in w[1]:
+                c.font = hdr_font; c.fill = hdr_fill
+            for i, wd in enumerate([10, 14, 7, 9, 12, 11, 11, 9, 9], start=1):
+                w.column_dimensions[get_column_letter(i)].width = wd
+            w.freeze_panes = "A2"
+            w.auto_filter.ref = w.dimensions
+    print(f"slim   : {path}")
 
 
 def main() -> None:
@@ -1929,6 +2009,7 @@ def main() -> None:
     xlsx = OUT_DIR / f"CRM_마스터_{cutoff}.xlsx"
     write_excel(df, seg_frames, summary, xlsx, rca, WB, WC, L, CP, RPT, TMT)
     write_target_book(df, summary, OUT_DIR / f"CRM_타겟통합_{cutoff}.xlsx", L, CP, load_lineup(), TMT)
+    write_slim_book(df, summary, OUT_DIR / f"CRM_발송용_{cutoff}.xlsx")
     (OUT_DIR / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=lambda o: o.isoformat() if hasattr(o, "isoformat") else int(o)), encoding="utf-8")
     write_markdown(summary, OUT_DIR / "분석요약.md")
 

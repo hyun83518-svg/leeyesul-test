@@ -5,10 +5,13 @@
 ```
 crm/
 ├── data/raw/            # 원본 내보내기 파일 (개인정보 포함, git 미추적)
+├── scripts/build_dashboard.py # summary.json → dashboard.html (읽기용)
 ├── scripts/build_crm.py # 정규화 → 회원관리·RCA·결제·예약이력·발송명단 병합 → 생애단계·VIP → 세그먼트·페르소나 → 발송 전환 대조 → 출력
 ├── output/
 │   ├── CRM_마스터_<기준일>.xlsx   # 회원 마스터 + 세그먼트·페르소나·RCA·발송 시트 (개인정보 포함, git 미추적)
-│   ├── CRM_타겟통합_<기준일>.xlsx # 타겟별 통합본: 0_요약 카탈로그 + 우선순위 A/B/C/X 타겟 시트 + 제외명단·캠페인성과·발송이력·라인업
+│   ├── CRM_타겟통합_<기준일>.xlsx # 타겟별 통합본(상세, 컬럼 30여 개): 0_요약 카탈로그 + 타겟 시트 + 제외명단·캠페인성과·발송이력·타이밍·라인업
+│   ├── CRM_발송용_<기준일>.xlsx   # 발송 실무용(컬럼 9개): 타겟 고르기 시트 + 타겟별 명단. 문자 툴에 그대로 붙여 넣는 용도
+│   ├── dashboard.html            # 읽기용 대시보드(개인정보 없음). build_dashboard.py 가 summary.json 에서 생성
 │   ├── summary.json              # 집계 요약 (개인정보 없음)
 │   └── 분석요약.md               # 집계 요약 마크다운 (개인정보 없음)
 ├── docs/                # 전략 문서(docx → md 변환본)
@@ -21,13 +24,16 @@ crm/
 
 ```bash
 pip install pandas openpyxl
-python3 crm/scripts/build_crm.py            # raw/ 의 최신 '*전체*.xlsx' 사용
+python3 crm/scripts/build_crm.py            # raw/ 의 최신 '*전체*.xlsx' 사용 → 마스터·타겟통합·발송용 xlsx + 요약
+python3 crm/scripts/build_dashboard.py      # → output/dashboard.html (Artifact 로 재발행하면 같은 링크가 갱신됨)
 python3 crm/scripts/build_crm.py --master crm/data/raw/회원설문_2026-09-01_전체.xlsx
 ```
 
 ## 새 데이터가 들어올 때 — 파일만 넣고 실행하면 된다
 
-정기 갱신에 필요한 파일은 세 가지다. 아래 이름 규칙으로 `crm/data/raw/`에 넣고 `python3 crm/scripts/build_crm.py`를 실행하면 마스터·타겟통합·요약이 모두 다시 만들어진다.
+정기 갱신에 필요한 파일은 세 가지다. 아래 이름 규칙으로 `crm/data/raw/`에 넣고 `python3 crm/scripts/build_crm.py`를 실행하면 마스터·타겟통합·발송용·요약이 모두 다시 만들어진다. 이어서 `build_dashboard.py`를 실행하면 대시보드도 갱신된다.
+
+**어느 파일을 볼까**: 숫자와 결론은 대시보드, 발송 명단은 `CRM_발송용`, 컬럼 전부가 필요할 때만 `CRM_타겟통합`·`CRM_마스터`.
 
 | 무엇 | 파일명 규칙 | 주기 | 없으면 생기는 일 |
 |---|---|---|---|
