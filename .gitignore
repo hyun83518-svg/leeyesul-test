@@ -1,0 +1,7 @@
+# 개인정보가 포함된 원본/출력 파일은 저장소에 올리지 않는다
+crm/data/raw/*
+!crm/data/raw/.gitkeep
+crm/output/*.xlsx
+crm/output/*.csv
+__pycache__/
+*.pyc

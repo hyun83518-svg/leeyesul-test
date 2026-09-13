@@ -1,0 +1,296 @@
+<title>아르테파인 CRM 대시보드</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+:root{color-scheme:light;
+ --page:#f4f5f3;--surface:#ffffff;--ink:#15181b;--ink-2:#5b6168;--muted:#8a8f95;--hair:#e3e5e1;--rule:#c9cdc8;
+ --accent:#1f5f8b;--accent-ink:#ffffff;--bar:#2a78d6;--bar-hollow:#2a78d6;
+ --chip-a:#dcecd6;--chip-b:#fbefc9;--chip-c:#e8e9e6;--chip-x:#f6d2c6;--chip-ink:#15181b;}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;
+ --page:#0f1113;--surface:#1a1d20;--ink:#f2f3f0;--ink-2:#b9bdb5;--muted:#8f948f;--hair:#2c3034;--rule:#3a3f44;
+ --accent:#6fa8dc;--accent-ink:#0f1113;--bar:#3987e5;--bar-hollow:#3987e5;
+ --chip-a:#2f4a2a;--chip-b:#4d4020;--chip-c:#2c3034;--chip-x:#5a2f28;--chip-ink:#f2f3f0;}}
+:root[data-theme="dark"]{color-scheme:dark;
+ --page:#0f1113;--surface:#1a1d20;--ink:#f2f3f0;--ink-2:#b9bdb5;--muted:#8f948f;--hair:#2c3034;--rule:#3a3f44;
+ --accent:#6fa8dc;--accent-ink:#0f1113;--bar:#3987e5;--bar-hollow:#3987e5;
+ --chip-a:#2f4a2a;--chip-b:#4d4020;--chip-c:#2c3034;--chip-x:#5a2f28;--chip-ink:#f2f3f0;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font-family:"IBM Plex Sans KR","IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:15px;line-height:1.55;padding-block:0 48px;padding-inline:20px}
+.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+.wrap{max-width:1120px;margin:0 auto}
+header{padding-block:28px 18px;border-bottom:1px solid var(--rule);margin-bottom:24px}
+.eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+h1{font-size:28px;line-height:1.2;margin:6px 0 8px;font-weight:600;text-wrap:balance}
+.basis{color:var(--ink-2);font-size:14px;display:flex;flex-wrap:wrap;gap:6px 18px}
+h2{font-size:19px;font-weight:600;margin:36px 0 6px;text-wrap:balance}
+h2 + p.lead{margin:0 0 14px;color:var(--ink-2);max-width:68ch}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--hair);padding:14px 16px}
+.k-label{font-size:12px;color:var(--ink-2);letter-spacing:.04em}
+.k-value{font-size:30px;font-weight:600;line-height:1.15;margin:4px 0 2px}
+.k-value small{font-size:15px;font-weight:500;color:var(--ink-2);margin-left:4px}
+.k-note{font-size:12.5px;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+.grid2.two{grid-template-columns:repeat(auto-fit,minmax(420px,1fr))}
+.panel{background:var(--surface);border:1px solid var(--hair);padding:14px 16px 10px}
+.panel h3{font-size:14.5px;font-weight:600;margin:0 0 2px}
+.panel .sub{font-size:12.5px;color:var(--muted);margin:0 0 8px}
+svg.bar{width:100%;height:auto;display:block;overflow:visible}
+svg.bar .lbl{font-size:12.5px;fill:var(--ink-2);font-family:inherit}
+svg.bar .val{font-size:12.5px;fill:var(--ink);font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:600}
+svg.bar .val .sub{fill:var(--muted);font-weight:400}
+svg.bar .mark{fill:var(--bar)}
+svg.bar .mark.hollow{fill:none;stroke:var(--bar-hollow);stroke-width:1.5;stroke-dasharray:4 3}
+svg.bar .row:hover .mark,svg.bar .row:focus .mark{opacity:.8}
+svg.bar .row:focus{outline:none}
+.tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--page);font-size:12.5px;padding:6px 9px;border-radius:2px;opacity:0;transition:opacity .12s;z-index:9;max-width:280px}
+table{border-collapse:collapse;width:100%;font-size:13.5px;background:var(--surface)}
+.tablewrap{overflow-x:auto;border:1px solid var(--hair)}
+th{text-align:left;font-weight:600;font-size:12px;letter-spacing:.04em;color:var(--ink-2);border-bottom:1px solid var(--rule);padding:9px 10px;white-space:nowrap;background:var(--surface);position:sticky;top:0}
+td{padding:8px 10px;border-bottom:1px solid var(--hair);vertical-align:top}
+td.num,th.num{text-align:right;font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.dim td{color:var(--muted)}
+.chip{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:2px;color:var(--chip-ink);letter-spacing:.03em}
+.chip.A{background:var(--chip-a)}.chip.B{background:var(--chip-b)}.chip.C{background:var(--chip-c)}.chip.X{background:var(--chip-x)}
+.callouts{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.call{border-left:3px solid var(--accent);background:var(--surface);padding:12px 14px}
+.call b{display:block;margin-bottom:3px}
+.call p{margin:0;color:var(--ink-2);font-size:14px}
+.elapsed{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;align-items:end;height:120px;margin-top:6px}
+.elapsed .col{display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:4px}
+.elapsed .bar-v{background:var(--bar);min-height:2px}
+.elapsed .cap{font-size:11px;color:var(--muted);text-align:center;line-height:1.2}
+.elapsed .n{font-size:12px;text-align:center;font-family:"IBM Plex Mono",monospace}
+.hours{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;align-items:end;height:70px;margin-top:6px}
+.hours .h{background:var(--bar);min-height:1px}
+.hours .h.peak{background:var(--accent)}
+.hourlab{display:grid;grid-template-columns:repeat(24,1fr);font-size:10px;color:var(--muted);font-family:"IBM Plex Mono",monospace;text-align:center}
+.pivot td{text-align:right;font-family:"IBM Plex Mono",monospace}
+.pivot td.best{font-weight:700;color:var(--accent)}
+.foot{margin-top:36px;padding-top:14px;border-top:1px solid var(--rule);font-size:12.5px;color:var(--muted);max-width:80ch}
+.foot p{margin:4px 0}
+@media (prefers-reduced-motion:reduce){.tip{transition:none}}
+@media (max-width:480px){h1{font-size:23px}.k-value{font-size:26px}}
+</style>
+<div class="wrap">
+<header>
+  <div class="eyebrow">ARTEFINE · CRM 문자 캠페인</div>
+  <h1>누구에게, 언제 보내면 결제로 이어지나</h1>
+  <div class="basis">
+    <span>회원 6,732명 · 설문 843 · 동의 559</span>
+    <span>결제 이력 2026-03-21 ~ 2026-09-13 · 이용 고객 979</span>
+    <span>문자 3,487건 · 수신자 1,692명 · 대조군 112</span>
+    <span>갱신 2026-09-13 07:58</span>
+  </div>
+</header>
+
+<div class="kpis"><div class="kpi"><div class="k-label">발송 가능 풀</div><div class="k-value">4,955<small>명</small></div><div class="k-note">동의 + 설문 도입 전 미응답 · 미동의·수신거부·직원 제외</div></div><div class="kpi"><div class="k-label">발송 시점 활성 고객 전환율</div><div class="k-value">9.9<small>%</small></div><div class="k-note">미이용 1.7% · 휴면 2.5% (완전 측정 2,486건)</div></div><div class="kpi"><div class="k-label">문자 → 첫 결제 중앙값</div><div class="k-value">5.0<small>일</small></div><div class="k-note">24시간 내 9.8% · 성과 판정은 D+14</div></div><div class="kpi"><div class="k-label">가장 반응 좋은 발송 슬롯</div><div class="k-value">토 오전 발송</div><div class="k-note">10.9% · 07/25 10:00 (명단 효과 포함)</div></div></div>
+
+<h2>누구에게 보내면 반응하나</h2>
+<p class="lead">전환 = 문자 발송 후 14일 안에 유효 결제. 생애단계는 발송 시점 기준. 결제 데이터가 14일 창을 완전히 덮는 회차(20260724_promo, 20260731_promo, 20260807_promo, 20260814_연휴, 20260822RENT_promo)만 집계.</p>
+<div class="grid2">
+  <div class="panel"><h3>발송 시점 생애단계</h3><p class="sub">활성 = 최근 30일 이용 · 이탈위험 = 2회 이상 & 31~90일 · 그 외 휴면</p><svg class="bar" viewBox="0 0 560 144" role="img" aria-label="막대 차트">
+<g class="row" tabindex="0"><title>활성: 463명 중 46명 · 9.9%</title>
+<text class="lbl" x="108" y="21.68" text-anchor="end">활성</text>
+<rect class="mark " x="118" y="4" width="378.0" height="26" rx="0" />
+<text class="val" x="504.0" y="21.68">9.9%<tspan class="sub"> · 463명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>휴면: 482명 중 12명 · 2.5%</title>
+<text class="lbl" x="108" y="55.68" text-anchor="end">휴면</text>
+<rect class="mark " x="118" y="38" width="95.5" height="26" rx="0" />
+<text class="val" x="221.5" y="55.68">2.5%<tspan class="sub"> · 482명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>미이용: 1386명 중 23명 · 1.7%</title>
+<text class="lbl" x="108" y="89.68" text-anchor="end">미이용</text>
+<rect class="mark " x="118" y="72" width="64.9" height="26" rx="0" />
+<text class="val" x="190.9" y="89.68">1.7%<tspan class="sub"> · 1386명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>이탈위험: 155명 중 1명 · 0.6%</title>
+<text class="lbl" x="108" y="123.68" text-anchor="end">이탈위험</text>
+<rect class="mark " x="118" y="106" width="22.9" height="26" rx="0" />
+<text class="val" x="148.9" y="123.68">0.6%<tspan class="sub"> · 155명</tspan></text>
+</g>
+</svg></div>
+  <div class="panel"><h3>고객 시간성향</h3><p class="sub">결제 이력의 예약 시작 시각으로 판정 (심야 21~05시, 저녁 17~20시, 낮 10~16시)</p><svg class="bar" viewBox="0 0 560 144" role="img" aria-label="막대 차트">
+<g class="row" tabindex="0"><title>심야형: 142명 중 16명 · 11.3%</title>
+<text class="lbl" x="108" y="21.68" text-anchor="end">심야형</text>
+<rect class="mark " x="118" y="4" width="170.9" height="26" rx="0" />
+<text class="val" x="296.9" y="21.68">11.3%<tspan class="sub"> · 142명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>낮형: 650명 중 53명 · 8.2%</title>
+<text class="lbl" x="108" y="55.68" text-anchor="end">낮형</text>
+<rect class="mark " x="118" y="38" width="124.0" height="26" rx="0" />
+<text class="val" x="250.0" y="55.68">8.2%<tspan class="sub"> · 650명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>저녁형: 159명 중 11명 · 6.9%</title>
+<text class="lbl" x="108" y="89.68" text-anchor="end">저녁형</text>
+<rect class="mark " x="118" y="72" width="104.3" height="26" rx="0" />
+<text class="val" x="230.3" y="89.68">6.9%<tspan class="sub"> · 159명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>새벽·오전형: 8명 중 2명 · 25.0%</title>
+<text class="lbl" x="108" y="123.68" text-anchor="end">새벽·오전형</text>
+<rect class="mark " x="118" y="106" width="378.0" height="26" rx="0" />
+<text class="val" x="504.0" y="123.68">25.0%<tspan class="sub"> · 8명</tspan></text>
+</g>
+</svg></div>
+  <div class="panel"><h3>취향 장르</h3><p class="sub">이용 차종의 장르 (가장 많이 탄 장르)</p><svg class="bar" viewBox="0 0 560 246" role="img" aria-label="막대 차트">
+<g class="row" tabindex="0"><title>크루저: 70명 중 9명 · 12.9%</title>
+<text class="lbl" x="108" y="21.68" text-anchor="end">크루저</text>
+<rect class="mark " x="118" y="4" width="378.0" height="26" rx="0" />
+<text class="val" x="504.0" y="21.68">12.9%<tspan class="sub"> · 70명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>스포츠: 95명 중 12명 · 12.6%</title>
+<text class="lbl" x="108" y="55.68" text-anchor="end">스포츠</text>
+<rect class="mark " x="118" y="38" width="369.2" height="26" rx="0" />
+<text class="val" x="495.2" y="55.68">12.6%<tspan class="sub"> · 95명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>네이키드: 164명 중 17명 · 10.4%</title>
+<text class="lbl" x="108" y="89.68" text-anchor="end">네이키드</text>
+<rect class="mark " x="118" y="72" width="304.7" height="26" rx="0" />
+<text class="val" x="430.7" y="89.68">10.4%<tspan class="sub"> · 164명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>어드벤처: 171명 중 15명 · 8.8%</title>
+<text class="lbl" x="108" y="123.68" text-anchor="end">어드벤처</text>
+<rect class="mark " x="118" y="106" width="257.9" height="26" rx="0" />
+<text class="val" x="383.9" y="123.68">8.8%<tspan class="sub"> · 171명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>슈퍼스포츠: 184명 중 15명 · 8.2%</title>
+<text class="lbl" x="108" y="157.68" text-anchor="end">슈퍼스포츠</text>
+<rect class="mark " x="118" y="140" width="240.3" height="26" rx="0" />
+<text class="val" x="366.3" y="157.68">8.2%<tspan class="sub"> · 184명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>클래식: 132명 중 10명 · 7.6%</title>
+<text class="lbl" x="108" y="191.68" text-anchor="end">클래식</text>
+<rect class="mark " x="118" y="174" width="222.7" height="26" rx="0" />
+<text class="val" x="348.7" y="191.68">7.6%<tspan class="sub"> · 132명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>투어러: 119명 중 1명 · 0.8%</title>
+<text class="lbl" x="108" y="225.68" text-anchor="end">투어러</text>
+<rect class="mark " x="118" y="208" width="23.4" height="26" rx="0" />
+<text class="val" x="149.4" y="225.68">0.8%<tspan class="sub"> · 119명</tspan></text>
+</g>
+</svg></div>
+  <div class="panel"><h3>최대 이용 배기량</h3><p class="sub">스텝업 소구는 미들급 이용자에게</p><svg class="bar" viewBox="0 0 560 144" role="img" aria-label="막대 차트">
+<g class="row" tabindex="0"><title>미들급: 221명 중 24명 · 10.9%</title>
+<text class="lbl" x="108" y="21.68" text-anchor="end">미들급</text>
+<rect class="mark " x="118" y="4" width="378.0" height="26" rx="0" />
+<text class="val" x="504.0" y="21.68">10.9%<tspan class="sub"> · 221명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>리터급: 711명 중 47명 · 6.6%</title>
+<text class="lbl" x="108" y="55.68" text-anchor="end">리터급</text>
+<rect class="mark " x="118" y="38" width="228.9" height="26" rx="0" />
+<text class="val" x="354.9" y="55.68">6.6%<tspan class="sub"> · 711명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>쿼터급: 150명 중 8명 · 5.3%</title>
+<text class="lbl" x="108" y="89.68" text-anchor="end">쿼터급</text>
+<rect class="mark " x="118" y="72" width="183.8" height="26" rx="0" />
+<text class="val" x="309.8" y="89.68">5.3%<tspan class="sub"> · 150명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>소형: 48명 중 3명 · 6.2%</title>
+<text class="lbl" x="108" y="123.68" text-anchor="end">소형</text>
+<rect class="mark " x="118" y="106" width="215.0" height="26" rx="0" />
+<text class="val" x="341.0" y="123.68">6.2%<tspan class="sub"> · 48명</tspan></text>
+</g>
+</svg></div>
+  <div class="panel"><h3>마케팅 수신 상태</h3><p class="sub">동의자가 미응답보다 2배 이상 반응</p><svg class="bar" viewBox="0 0 560 110" role="img" aria-label="막대 차트">
+<g class="row" tabindex="0"><title>동의: 608명 중 33명 · 5.4%</title>
+<text class="lbl" x="108" y="21.68" text-anchor="end">동의</text>
+<rect class="mark " x="118" y="4" width="59.0" height="26" rx="0" />
+<text class="val" x="185.0" y="21.68">5.4%<tspan class="sub"> · 608명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>미응답: 1788명 중 40명 · 2.2%</title>
+<text class="lbl" x="108" y="55.68" text-anchor="end">미응답</text>
+<rect class="mark " x="118" y="38" width="24.0" height="26" rx="0" />
+<text class="val" x="150.0" y="55.68">2.2%<tspan class="sub"> · 1788명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>미동의: 26명 중 9명 · 34.6%</title>
+<text class="lbl" x="108" y="89.68" text-anchor="end">미동의</text>
+<rect class="mark " x="118" y="72" width="378.0" height="26" rx="0" />
+<text class="val" x="504.0" y="89.68">34.6%<tspan class="sub"> · 26명</tspan></text>
+</g>
+</svg></div>
+  <div class="panel"><h3>주 이용 지점</h3><p class="sub">발송 10명 이상 지점만</p><svg class="bar" viewBox="0 0 560 144" role="img" aria-label="막대 차트">
+<g class="row" tabindex="0"><title>용산: 549명 중 51명 · 9.3%</title>
+<text class="lbl" x="108" y="21.68" text-anchor="end">용산</text>
+<rect class="mark " x="118" y="4" width="245.8" height="26" rx="0" />
+<text class="val" x="371.8" y="21.68">9.3%<tspan class="sub"> · 549명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>인천: 332명 중 19명 · 5.7%</title>
+<text class="lbl" x="108" y="55.68" text-anchor="end">인천</text>
+<rect class="mark " x="118" y="38" width="150.7" height="26" rx="0" />
+<text class="val" x="276.7" y="55.68">5.7%<tspan class="sub"> · 332명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>분당: 56명 중 8명 · 14.3%</title>
+<text class="lbl" x="108" y="89.68" text-anchor="end">분당</text>
+<rect class="mark " x="118" y="72" width="378.0" height="26" rx="0" />
+<text class="val" x="504.0" y="89.68">14.3%<tspan class="sub"> · 56명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>대구: 17명 중 1명 · 5.9%</title>
+<text class="lbl" x="108" y="123.68" text-anchor="end">대구</text>
+<rect class="mark " x="118" y="106" width="156.0" height="26" rx="0" />
+<text class="val" x="282.0" y="123.68">5.9%<tspan class="sub"> · 17명</tspan></text>
+</g>
+</svg></div>
+</div>
+
+<h2>언제 보내면 반응하나</h2>
+<p class="lead">발송 시각은 보고서 기록(7/25 토 10:00, 7/31·8/7 금 17:00, 8/22 토 14:28)과 추정(8/14, 9/4)을 함께 썼다. 슬롯 비교는 회차마다 명단이 달라 명단 효과가 섞여 있다.</p>
+<div class="grid2 two">
+  <div class="panel"><h3>발송 요일·시간대별 전환율</h3><p class="sub">같은 명단을 시각만 바꿔 나눠 보내는 A/B로 확인 필요</p><svg class="bar" viewBox="0 0 560 110" role="img" aria-label="막대 차트">
+<g class="row" tabindex="0"><title>토 오전: 92명 중 10명 · 10.9%</title>
+<text class="lbl" x="108" y="21.68" text-anchor="end">토 오전</text>
+<rect class="mark " x="118" y="4" width="378.0" height="26" rx="0" />
+<text class="val" x="504.0" y="21.68">10.9%<tspan class="sub"> · 92명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>토 점심: 901명 중 38명 · 4.2%</title>
+<text class="lbl" x="108" y="55.68" text-anchor="end">토 점심</text>
+<rect class="mark " x="118" y="38" width="145.7" height="26" rx="0" />
+<text class="val" x="271.7" y="55.68">4.2%<tspan class="sub"> · 901명</tspan></text>
+</g>
+<g class="row" tabindex="0"><title>금 오후: 1493명 중 34명 · 2.3%</title>
+<text class="lbl" x="108" y="89.68" text-anchor="end">금 오후</text>
+<rect class="mark " x="118" y="72" width="79.8" height="26" rx="0" />
+<text class="val" x="205.8" y="89.68">2.3%<tspan class="sub"> · 1493명</tspan></text>
+</g>
+</svg></div>
+  <div class="panel"><h3>고객 시간성향 × 발송 시간대</h3><p class="sub">결제 이력이 있는 수신자만. 세 성향 모두 오후 발송이 가장 낮다</p>
+    <div class="tablewrap"><table class="pivot"><thead><tr><th>시간성향</th><th class="num">오전(~12시)</th><th class="num">점심(12~15시)</th><th class="num">오후(15~18시)</th></tr></thead><tbody><tr><td style="text-align:left;font-family:inherit">낮형</td><td class="best">11.3%<br><span style="color:var(--muted);font-size:11px">62명</span></td><td class="best">11.3%<br><span style="color:var(--muted);font-size:11px">203명</span></td><td class="">6.0%<br><span style="color:var(--muted);font-size:11px">385명</span></td></tr><tr><td style="text-align:left;font-family:inherit">저녁형</td><td class="">7.7%<br><span style="color:var(--muted);font-size:11px">13명</span></td><td class="best">11.1%<br><span style="color:var(--muted);font-size:11px">63명</span></td><td class="">3.6%<br><span style="color:var(--muted);font-size:11px">83명</span></td></tr><tr><td style="text-align:left;font-family:inherit">심야형</td><td class="best">15.4%<br><span style="color:var(--muted);font-size:11px">13명</span></td><td class="">14.5%<br><span style="color:var(--muted);font-size:11px">55명</span></td><td class="">8.1%<br><span style="color:var(--muted);font-size:11px">74명</span></td></tr></tbody></table></div></div>
+  <div class="panel"><h3>문자 받고 결제까지 걸린 시간</h3><p class="sub">전환자 82명 · 중앙값 119.0시간 · 40%가 7일 이후</p><div class="elapsed"><div class="col"><div class="n">1</div><div class="bar-v" style="height:2px"></div><div class="cap">1시간 이내</div></div><div class="col"><div class="n">2</div><div class="bar-v" style="height:5px"></div><div class="cap">1~3시간</div></div><div class="col"><div class="n">0</div><div class="bar-v" style="height:0px"></div><div class="cap">3~6시간</div></div><div class="col"><div class="n">5</div><div class="bar-v" style="height:12px"></div><div class="cap">6~24시간</div></div><div class="col"><div class="n">17</div><div class="bar-v" style="height:40px"></div><div class="cap">1~3일</div></div><div class="col"><div class="n">24</div><div class="bar-v" style="height:57px"></div><div class="cap">3~7일</div></div><div class="col"><div class="n">33</div><div class="bar-v" style="height:78px"></div><div class="cap">7~14일</div></div></div></div>
+  <div class="panel"><h3>전환자의 첫 결제 시각</h3><p class="sub">낮 13~16시에 몰린다. 진한 막대가 상위 3개 시각</p><div class="hours"><div class="h" style="height:0px" title="0시 0명"></div><div class="h" style="height:0px" title="1시 0명"></div><div class="h" style="height:0px" title="2시 0명"></div><div class="h" style="height:5px" title="3시 1명"></div><div class="h" style="height:0px" title="4시 0명"></div><div class="h" style="height:0px" title="5시 0명"></div><div class="h" style="height:0px" title="6시 0명"></div><div class="h" style="height:5px" title="7시 1명"></div><div class="h" style="height:14px" title="8시 3명"></div><div class="h" style="height:5px" title="9시 1명"></div><div class="h" style="height:24px" title="10시 5명"></div><div class="h" style="height:24px" title="11시 5명"></div><div class="h" style="height:19px" title="12시 4명"></div><div class="h peak" style="height:66px" title="13시 14명"></div><div class="h peak" style="height:38px" title="14시 8명"></div><div class="h" style="height:33px" title="15시 7명"></div><div class="h peak" style="height:38px" title="16시 8명"></div><div class="h" style="height:14px" title="17시 3명"></div><div class="h" style="height:9px" title="18시 2명"></div><div class="h" style="height:19px" title="19시 4명"></div><div class="h" style="height:28px" title="20시 6명"></div><div class="h" style="height:28px" title="21시 6명"></div><div class="h" style="height:5px" title="22시 1명"></div><div class="h" style="height:14px" title="23시 3명"></div></div><div class="hourlab"><div>0</div><div></div><div></div><div>3</div><div></div><div></div><div>6</div><div></div><div></div><div>9</div><div></div><div></div><div>12</div><div></div><div></div><div>15</div><div></div><div></div><div>18</div><div></div><div></div><div>21</div><div></div><div></div></div></div>
+</div>
+
+<h2>회차별 성과</h2>
+<p class="lead">명단 전수 대조 기준. 회색 행은 결제 데이터가 아직 14일 창을 덮지 못한 회차.</p>
+<div class="tablewrap"><table><thead><tr><th>발송 일시</th><th>캠페인</th><th>타겟</th><th class="num">발송</th><th class="num">전환</th><th class="num">전환율</th><th class="num">전환 매출(원)</th><th>측정</th></tr></thead><tbody><tr><td class="mono">2026-07-11  </td><td>202607_promo</td><td>RCA 전체(대량), 회원 전체(대량)</td><td class="num">8,522</td><td class="num">27</td><td class="num">0.3%</td><td class="num">1,340,000</td><td>웹분석 확정 3·순매출 3만원. 수신자 40%가 미수강</td></tr><tr><td class="mono">2026-07-25 토 10:00</td><td>20260724_promo</td><td>T1, T2, T3</td><td class="num">92</td><td class="num">10</td><td class="num">10.9%</td><td class="num">624,000</td><td>완전 측정 · 시각 기록</td></tr><tr><td class="mono">2026-07-31 금 17:00</td><td>20260731_promo</td><td>용산_밤바리, 인천_오션라이딩</td><td class="num">495</td><td class="num">11</td><td class="num">2.2%</td><td class="num">1,220,000</td><td>완전 측정 · 시각 기록</td></tr><tr><td class="mono">2026-08-07 금 17:00</td><td>20260807_promo</td><td>분당 ④ 1회 결제, 용산 ① VIP·충성, 용산 ② 재방문 리텐션, 용산 ③ 충성 다회(2회+)…</td><td class="num">498</td><td class="num">15</td><td class="num">3.0%</td><td class="num">1,198,000</td><td>완전 측정 · 시각 기록</td></tr><tr><td class="mono">2026-08-14 금 15:00</td><td>20260814_연휴</td><td>① 거래관계(전환경험), ② 수신동의, ③ 미응답(설문도입전)</td><td class="num">500</td><td class="num">8</td><td class="num">1.6%</td><td class="num">818,500</td><td>완전 측정 · 시각 추정</td></tr><tr><td class="mono">2026-08-22 토 14:37</td><td>20260822RENT_promo</td><td>동의 신규(미거래), 용산 거래고객, 인천 거래고객</td><td class="num">901</td><td class="num">38</td><td class="num">4.2%</td><td class="num">2,403,000</td><td>완전 측정 · 시각 기록</td></tr><tr><td class="mono">2026-09-04 금 11:34</td><td>20260904RENT_promo</td><td>용산_신규 C. 휴면 (91일+), 용산_신규 D. 동의 신규(미거래), 용산_재방문 A. 야간 이용 경험, 용산_재방문 B. 최근 90일 이용…</td><td class="num">1,001</td><td class="num">31</td><td class="num">3.1%</td><td class="num">2,746,671</td><td>부분 측정(9일치): 결제 데이터 09-13까지 · 시각 추정</td></tr></tbody></table></div>
+
+<h2>다음 회차 타겟</h2>
+<p class="lead">명단은 발송용 엑셀(CRM_발송용)의 같은 코드 시트에 있다. 한 사람이 여러 타겟에 들어가면 우선순위 높은 한 곳에서만 보낸다(월 2통 상한).</p>
+<div class="tablewrap"><table><thead><tr><th></th><th>타겟</th><th class="num">인원</th><th class="num">동의</th><th>왜</th><th>무엇을</th><th>언제</th></tr></thead><tbody><tr><td><span class="chip A">A</span></td><td><b>A1</b> 활성_야간형</td><td class="num">18</td><td class="num">6</td><td>심야형 전환 11.3%(최고), 9/4 용산 야간경험 8.6%(9일치)</td><td>금·토 심야 연장·야간 라이딩 소구</td><td>토 10:00 또는 평일 11~13시 (심야형도 낮에 받은 문자로 밤에 결제)</td></tr><tr><td><span class="chip A">A</span></td><td><b>A2</b> 활성_최근30일이용</td><td class="num">125</td><td class="num">53</td><td>발송 시점 활성 9.7% vs 휴면 2.5%·미이용 1.6%</td><td>이달의 라인업·재방문 오퍼(2시간 무료 등)</td><td>토 10:00 또는 목·금 16:00</td></tr><tr><td><span class="chip A">A</span></td><td><b>A3</b> 활성_미들급_스텝업</td><td class="num">70</td><td class="num">27</td><td>미들급 이용자 10.9% &gt; 리터급 6.5% &gt; 쿼터급 4.7%</td><td>&quot;다음 단계&quot; 리터급 시승 제안 (현재 라인업 CBR1000RR-R·TIGER 900)</td><td>토 10:00</td></tr><tr><td><span class="chip A">A</span></td><td><b>A4</b> 동의신규_미거래</td><td class="num">476</td><td class="num">476</td><td>9/4 D그룹 439명 1.8%(128만 원, 9일치), 8/22 동의 신규 2.2%. 동의자 전환 5.3% vs 미응답 2.2%</td><td>첫 시승 오퍼(첫라이딩 9,900·시간 추가)</td><td>금 15:00 / 토 10:00</td></tr><tr><td><span class="chip A">A</span></td><td><b>A5</b> 활성휴면_스포츠네이키드크루저어드벤처</td><td class="num">412</td><td class="num">57</td><td>장르별 전환 스포츠 12.6%·크루저 11.4%·네이키드 10.4%·어드벤처 8.8%</td><td>장르 동일 현재 차종으로 소구 (675SR-R·450CL-C·450MT·TIGER 900)</td><td>토 10:00</td></tr><tr><td><span class="chip A">A</span></td><td><b>A6</b> 지점_분당_결제고객</td><td class="num">42</td><td class="num">14</td><td>분당 14.3%(56명 중 8명) 지점 최고</td><td>분당 얼리버드·CFMOTO 라인 (평일 아침)</td><td>목·금 10:00</td></tr><tr><td><span class="chip A">A</span></td><td><b>A7</b> 지점_대구진주제주_결제고객</td><td class="num">49</td><td class="num">7</td><td>소규모 지점 회차용. 제주 5명 중 3명 전환</td><td>지점별 라인업 안내</td><td>토 10:00</td></tr><tr><td><span class="chip B">B</span></td><td><b>B1</b> 휴면_반응장르</td><td class="num">316</td><td class="num">16</td><td>휴면 전체 2.5%. 반응 장르(스포츠·네이키드·크루저·어드벤처·슈퍼스포츠)만 추림</td><td>라인업 교체·신차 입고 명분 + 정액 오퍼</td><td>월 1회 대량 회차</td></tr><tr><td><span class="chip B">B</span></td><td><b>B2</b> 휴면_투어러클래식</td><td class="num">115</td><td class="num">4</td><td>투어러 0.8%·클래식 6.8%. 문자 저반응, BMW 투어러 부재 영향</td><td>신차(투어러·클래식) 입고 시에만 발송. 평소엔 제외</td><td>입고 시</td></tr><tr><td><span class="chip B">B</span></td><td><b>B3</b> 이탈위험_단골</td><td class="num">84</td><td class="num">5</td><td>이탈위험 0.6%. 문자로는 안 돌아옴</td><td>지점 전화·개인 메시지(LTV 상위부터)</td><td>문자 대신 전화</td></tr><tr><td><span class="chip B">B</span></td><td><b>B4</b> 첫이용_30일_자동화</td><td class="num">16</td><td class="num">11</td><td>CP011. 첫 이용 27~35일 경과 1회 이용자</td><td>&quot;다음은 같은 장르의 [현재 차종]&quot; 재방문 안내</td><td>상시 자동(이용 D+27~30)</td></tr><tr><td><span class="chip B">B</span></td><td><b>B5</b> 프로모전환자_재발송금지</td><td class="num">50</td><td class="num">14</td><td>CP009. 프로모코드로 결제한 고객. 동일 할인 광고 재발송 금지 그룹</td><td>감사 + 재방문 혜택(다른 오퍼)</td><td>회차 후 1주</td></tr><tr><td><span class="chip B">B</span></td><td><b>B6</b> VIP</td><td class="num">176</td><td class="num">22</td><td>3회+ / 순결제 20만+ / RCA교차+결제 (최종세분화명단 정의)</td><td>서킷데이·신차 우선 시승 초대, 친구 소개 프로그램</td><td>회차별 우선 포함</td></tr><tr><td><span class="chip B">B</span></td><td><b>B7</b> RCA교차_수강경험</td><td class="num">134</td><td class="num">15</td><td>레인조 수강 1회+ &amp; 아르테파인 회원. 문서 규칙: 경험 소구만, 가격 소구 금지</td><td>&quot;배운 그 감각, 도로에서&quot; + 같은 장르 현재 차종</td><td>수료 후 D+3~7 오전 10:00</td></tr><tr><td><span class="chip C">C</span></td><td><b>C1</b> 미이용_회원_발송가능</td><td class="num">4,112</td><td class="num">476</td><td>이력 없는 회원 1.6%. 대량 회차·지점 미상. 최근 가입순 정렬</td><td>첫 시승·초회 혜택. 지점 링크로 지점 분류 겸함</td><td>월 1회 대량 (동의자 우선)</td></tr><tr><td><span class="chip X">X</span></td><td><b>X1</b> 참고_미동의_단골_발송불가</td><td class="num">74</td><td class="num">0</td><td>미동의자 26명 중 9명 결제(34.6%)했지만 광고 발송 불가</td><td>예약 확인·반납 안내 등 거래 메시지에 재방문 정보만</td><td>발송 금지</td></tr></tbody></table></div>
+
+<h2>다음 회차 설계 원칙</h2>
+<div class="callouts">
+  <div class="call"><b>최근 30일 내 이용자부터</b><p>활성 9.9% vs 미이용 1.7%. 휴면·이탈위험은 문자보다 전화나 라인업 교체 명분이 필요하다.</p></div>
+  <div class="call"><b>오전~점심 발송을 시험</b><p>낮형·저녁형·심야형 모두 오후 15~18시 발송이 가장 낮았다. 같은 명단을 반으로 나눠 토 10:00 vs 금 17:00으로 비교한다.</p></div>
+  <div class="call"><b>성과 판정은 D+14</b><p>결제의 60%가 발송 3일 이후, 40%가 7일 이후. D+7 집계는 전환을 절반 가까이 놓친다.</p></div>
+  <div class="call"><b>투어러 취향은 신차 입고 때만</b><p>투어러 0.8%. 현재 라인업에 BMW 투어러가 없다. 스포츠·네이키드·크루저·어드벤처에 집중.</p></div>
+  <div class="call"><b>대조군 10%를 매 회차</b><p>9/4에 처음 둔 홀드아웃 112명이 네 층 모두 발송 쪽보다 낮았다. 3~4회 쌓이면 순효과가 안정된다.</p></div>
+  <div class="call"><b>규정</b><p>(광고) 표기, 080 수신거부, 08~20시 발송. 미동의·수신거부는 명단에서 자동 제외되어 있다.</p></div>
+</div>
+
+<div class="foot">
+  <p>데이터: 회원 설문 내보내기 회원설문_2026-09-02_전체.xlsx, 결제상세 2026-03-21 ~ 2026-09-13 (예약이력으로 5/19~6/21 보강), 문자 발송 명단 6회 + 홀드아웃, 레인조아카데미 회원 DB, 방문통계 월별 리포트.</p>
+  <p>개인정보는 이 페이지에 없다. 명단은 CRM_발송용 / CRM_타겟통합 엑셀에만 있다. 새 파일을 넣고 build_crm.py → build_dashboard.py 를 실행하면 갱신된다.</p>
+</div>
+</div>
+<div class="tip" id="tip" aria-hidden="true"></div>
+<script>
+(function(){
+  var tip=document.getElementById('tip');
+  document.querySelectorAll('svg.bar .row').forEach(function(g){
+    var t=g.querySelector('title'); if(!t) return; var text=t.textContent; t.remove();
+    g.addEventListener('mousemove',function(e){tip.textContent=text;tip.style.left=(e.clientX+12)+'px';tip.style.top=(e.clientY+12)+'px';tip.style.opacity=1;});
+    g.addEventListener('mouseleave',function(){tip.style.opacity=0;});
+    g.addEventListener('focus',function(){var r=g.getBoundingClientRect();tip.textContent=text;tip.style.left=(r.left+120)+'px';tip.style.top=(r.top-30)+'px';tip.style.opacity=1;});
+    g.addEventListener('blur',function(){tip.style.opacity=0;});
+  });
+})();
+</script>
