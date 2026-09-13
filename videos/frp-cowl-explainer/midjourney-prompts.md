@@ -5,10 +5,11 @@
 ## 공통 규칙
 
 - **스타일 앵커(모든 프롬프트 끝에 붙임):**
-  `stylized 3D render, high-end CGI, octane render, clean geometry, cinematic night racetrack lighting, wet dark asphalt, red and white curbs, volumetric haze, shallow depth of field`
+  `stylized 3D render, high-end CGI, octane render, clean geometry, bright daytime racetrack, clear blue sky, hard sunlight with crisp shadows, dry grey asphalt, red and white curbs, shallow depth of field`
 - **파라미터:** `--ar 9:16 --v 7 --style raw --s 250 --no text, letters, logo, watermark`
 - **일관성:** 장면 1에서 뽑은 바이크/카울 스틸을 `--oref <이미지URL> --ow 200` (V7 옴니 레퍼런스)로 이후 장면에 물려서 같은 카울이 나오게 하세요. 색감은 `--sref <장면1 URL>` 로 통일. 순정 카울 = **glossy red OEM fairing**, FRP 카울 = **raw white gelcoat fiberglass race fairing** 으로 색을 나눠 시청자가 한눈에 구분하도록 합니다.
 - **모션 강도:** 카메라만 움직이는 컷은 Low motion, 파편·스파크 컷은 High motion.
+- **시간대:** 전 장면 **주간 서킷**(맑은 하늘, 강한 햇빛, 선명한 그림자). 마지막 CTA만 늦은 오후 햇빛으로 마무리 톤을 줍니다.
 
 ---
 
@@ -16,11 +17,11 @@
 
 **이미지**
 ```
-low-angle tracking shot of a sportbike with bare race fairings leaning deep into a corner on a racetrack at night, knee down, rider in black leathers, headlight beam cutting through haze, motion blur on the asphalt, stylized 3D render, high-end CGI, octane render, clean geometry, cinematic night racetrack lighting, wet dark asphalt, red and white curbs, volumetric haze, shallow depth of field --ar 9:16 --v 7 --style raw --s 250 --no text, letters, logo, watermark
+low-angle tracking shot of a sportbike with bare race fairings leaning deep into a corner on a sunlit racetrack, knee down, rider in black leathers, bright midday sun, green runoff and gravel trap in the background, motion blur on the asphalt, stylized 3D render, high-end CGI, octane render, clean geometry, bright daytime racetrack, clear blue sky, hard sunlight with crisp shadows, dry grey asphalt, red and white curbs, shallow depth of field --ar 9:16 --v 7 --style raw --s 250 --no text, letters, logo, watermark
 ```
 **모션 (Low)**
 ```
-camera tracks alongside the bike through the corner, subtle parallax on the curbs, light haze drifting, smooth cinematic movement
+camera tracks alongside the bike through the corner, subtle parallax on the curbs, heat shimmer on the asphalt, smooth cinematic movement
 ```
 
 ---
@@ -29,7 +30,7 @@ camera tracks alongside the bike through the corner, subtle parallax on the curb
 
 **이미지 A — 낙하 직전**
 ```
-a glossy red OEM motorcycle fairing panel falling toward the asphalt of a racetrack, dramatic side light, frozen mid-air just before impact, extreme close-up, stylized 3D render, high-end CGI, octane render, clean geometry, cinematic night racetrack lighting, wet dark asphalt, red and white curbs, volumetric haze, shallow depth of field --ar 9:16 --v 7 --style raw --s 250 --no text, letters, logo, watermark
+a glossy red OEM motorcycle fairing panel falling toward the asphalt of a racetrack, dramatic side light, frozen mid-air just before impact, extreme close-up, stylized 3D render, high-end CGI, octane render, clean geometry, bright daytime racetrack, clear blue sky, hard sunlight with crisp shadows, dry grey asphalt, red and white curbs, shallow depth of field --ar 9:16 --v 7 --style raw --s 250 --no text, letters, logo, watermark
 ```
 **모션 (High)**
 ```
@@ -38,7 +39,7 @@ the red plastic fairing slams into the asphalt and shatters into dozens of sharp
 
 **이미지 B — 파편이 흩어진 트랙**
 ```
-top-down view of a racetrack racing line covered in sharp jagged shards of glossy red ABS plastic, scattered debris glinting under floodlights, ominous mood, stylized 3D render, high-end CGI, octane render, clean geometry, cinematic night racetrack lighting, wet dark asphalt, red and white curbs, volumetric haze, shallow depth of field --ar 9:16 --v 7 --style raw --s 250 --no text, letters, logo, watermark
+top-down view of a racetrack racing line covered in sharp jagged shards of glossy red ABS plastic, scattered debris glinting in harsh sunlight, ominous mood, stylized 3D render, high-end CGI, octane render, clean geometry, bright daytime racetrack, clear blue sky, hard sunlight with crisp shadows, dry grey asphalt, red and white curbs, shallow depth of field --ar 9:16 --v 7 --style raw --s 250 --no text, letters, logo, watermark
 ```
 **모션 (Low)**
 ```
@@ -51,7 +52,7 @@ slow overhead push-in toward the sharpest fragments, light flickers across the s
 
 **이미지 A — 뒤차 POV**
 ```
-first-person POV from a following motorcycle on a racetrack, handlebars and front fender in frame, sharp red plastic debris scattered on the racing line ahead, front tire about to hit the fragments, tense mood, stylized 3D render, high-end CGI, octane render, clean geometry, cinematic night racetrack lighting, wet dark asphalt, red and white curbs, volumetric haze, shallow depth of field --ar 9:16 --v 7 --style raw --s 250 --no text, letters, logo, watermark
+first-person POV from a following motorcycle on a racetrack, handlebars and front fender in frame, sharp red plastic debris scattered on the racing line ahead, front tire about to hit the fragments, tense mood, stylized 3D render, high-end CGI, octane render, clean geometry, bright daytime racetrack, clear blue sky, hard sunlight with crisp shadows, dry grey asphalt, red and white curbs, shallow depth of field --ar 9:16 --v 7 --style raw --s 250 --no text, letters, logo, watermark
 ```
 **모션 (High)**
 ```
@@ -60,7 +61,7 @@ bike rushes forward toward the debris, front tire rides over a sharp fragment, h
 
 **이미지 B — 적기**
 ```
-a track marshal at the edge of a racetrack waving a large red flag, floodlights behind him, motorcycles slowing in the background, dramatic low angle, stylized 3D render, high-end CGI, octane render, clean geometry, cinematic night racetrack lighting, wet dark asphalt, red and white curbs, volumetric haze, shallow depth of field --ar 9:16 --v 7 --style raw --s 250 --no text, letters, logo, watermark
+a track marshal at the edge of a racetrack waving a large red flag against a clear blue sky, motorcycles slowing in the background, dramatic low angle, stylized 3D render, high-end CGI, octane render, clean geometry, bright daytime racetrack, clear blue sky, hard sunlight with crisp shadows, dry grey asphalt, red and white curbs, shallow depth of field --ar 9:16 --v 7 --style raw --s 250 --no text, letters, logo, watermark
 ```
 **모션 (High)**
 ```
@@ -73,11 +74,11 @@ the marshal waves the red flag energetically, fabric ripples, bikes in the backg
 
 **이미지 A — 슬라이딩**
 ```
-a raw white gelcoat fiberglass motorcycle race fairing sliding sideways along racetrack asphalt, bottom edge grinding into the ground with a trail of orange sparks and fine white fiber dust, the panel stays in one solid piece, low side angle at ground level, stylized 3D render, high-end CGI, octane render, clean geometry, cinematic night racetrack lighting, wet dark asphalt, red and white curbs, volumetric haze, shallow depth of field --ar 9:16 --v 7 --style raw --s 250 --no text, letters, logo, watermark
+a raw white gelcoat fiberglass motorcycle race fairing sliding sideways along racetrack asphalt, bottom edge grinding into the ground with a trail of fine white fiber dust and small sparks, the panel stays in one solid piece, low side angle at ground level, stylized 3D render, high-end CGI, octane render, clean geometry, bright daytime racetrack, clear blue sky, hard sunlight with crisp shadows, dry grey asphalt, red and white curbs, shallow depth of field --ar 9:16 --v 7 --style raw --s 250 --no text, letters, logo, watermark
 ```
 **모션 (High)**
 ```
-the fiberglass fairing slides across the frame from left to right, its edge grinds down with a shower of sparks and dust, the panel stays whole and slowly comes to rest, slow motion, ground-level tracking camera
+the fiberglass fairing slides across the frame from left to right, its edge grinds down in a cloud of white fiber dust and small sparks, the panel stays whole and slowly comes to rest, slow motion, ground-level tracking camera
 ```
 
 **이미지 B — 유리섬유 직조 확대**
@@ -117,7 +118,7 @@ a glossy red OEM motorcycle fairing set carefully stored on a clean garage shelf
 
 **이미지**
 ```
-a rider in black leathers rolling into the pit lane on a sportbike with white fiberglass race fairings, flipping up the helmet visor, golden hour light with long shadows, cinematic hero shot, stylized 3D render, high-end CGI, octane render, clean geometry, volumetric haze, shallow depth of field --ar 9:16 --v 7 --style raw --s 250 --no text, letters, logo, watermark
+a rider in black leathers rolling into the pit lane on a sportbike with white fiberglass race fairings, flipping up the helmet visor, late afternoon sunlight with long shadows, cinematic hero shot, stylized 3D render, high-end CGI, octane render, clean geometry, bright daylight, shallow depth of field --ar 9:16 --v 7 --style raw --s 250 --no text, letters, logo, watermark
 ```
 **모션 (Low)**
 ```
