@@ -225,6 +225,216 @@ def survey_snapshots() -> list[dict]:
     return rows
 
 
+RCA_HEAVY_MIN = 3   # R1 헤비 기준 수강 횟수 (문서의 267명은 다른 기준/시점일 수 있어 조정 가능)
+
+
+def load_rca() -> pd.DataFrame | None:
+    """레인조아카데미(RCA) 회원 DB: No/회원등급/이름/이메일/휴대전화/가입일/이메일인증/보유포인트/수강횟수."""
+    files = sorted(RAW_DIR.glob("레인조_*.xlsx"))
+    if not files:
+        return None
+    frames = [pd.read_excel(f, dtype=str) for f in files]
+    r = pd.concat(frames, ignore_index=True).dropna(axis=1, how="all")
+    r.columns = [c.strip() for c in r.columns]
+    r["RCA_수강횟수"] = pd.to_numeric(r["수강횟수"], errors="coerce").fillna(0).astype(int)
+    r["RCA_포인트"] = pd.to_numeric(r["보유포인트"], errors="coerce").fillna(0).astype(int)
+    r["RCA_등급"] = r["회원등급"]
+    r["RCA_가입일"] = r["가입일"].str[:10]
+    r["RCA_이름"] = r["이름"]
+    r["RCA_이메일"] = r["이메일"].str.strip().str.lower()
+    r["RCA_연락처"] = r["휴대전화"].map(lambda v: normalize_phone("0" + str(v)) if pd.notna(v) and str(v).startswith("10") else normalize_phone(v))
+    r["RCA구분"] = pd.cut(r["RCA_수강횟수"], bins=[-1, 0, RCA_HEAVY_MIN - 1, 10**6],
+                          labels=["R3_미수강", "R2_수강경험", "R1_헤비"]).astype(str)
+    # 한 사람이 여러 계정이면 수강횟수 많은 쪽을 대표로
+    r = r.sort_values("RCA_수강횟수", ascending=False)
+    return r[["RCA_이름", "RCA_이메일", "RCA_연락처", "RCA_등급", "RCA_가입일", "RCA_수강횟수", "RCA_포인트", "RCA구분"]]
+
+
+def merge_rca(df: pd.DataFrame, r: pd.DataFrame | None) -> tuple[pd.DataFrame, pd.DataFrame | None]:
+    """연락처 → 이메일 순으로 매칭. 반환: (마스터, 회원여부가 표시된 RCA 전체)"""
+    cols = ["RCA_등급", "RCA_가입일", "RCA_수강횟수", "RCA_포인트", "RCA구분"]
+    for c in cols:
+        df[c] = pd.NA
+    df["RCA회원"] = False
+    if r is None:
+        return df, None
+    by_phone = r.dropna(subset=["RCA_연락처"]).drop_duplicates("RCA_연락처").set_index("RCA_연락처")
+    by_email = r.dropna(subset=["RCA_이메일"]).drop_duplicates("RCA_이메일").set_index("RCA_이메일")
+    matched_keys_phone, matched_keys_email = set(), set()
+    for i in df.index:
+        ph, em = df.at[i, "연락처_정규화"], df.at[i, "이메일_소문자"]
+        row = None
+        if pd.notna(ph) and ph in by_phone.index:
+            row = by_phone.loc[ph]; matched_keys_phone.add(ph)
+        elif pd.notna(em) and em in by_email.index:
+            row = by_email.loc[em]; matched_keys_email.add(em)
+        if row is not None:
+            for c in cols:
+                df.at[i, c] = row[c]
+            df.at[i, "RCA회원"] = True
+    r = r.copy()
+    r["아르테파인회원"] = r["RCA_연락처"].isin(matched_keys_phone) | r["RCA_이메일"].isin(matched_keys_email)
+    return df, r
+
+
+# ---------------------------------------------------------------------------
+# 결제(렌탈) 내역
+# ---------------------------------------------------------------------------
+# 차종 → (장르, 배기량대). 새 차종이 나오면 여기에 추가한다. 없는 차종은 ('기타', '미상').
+MODEL_INFO = {
+    "675SR-R": ("스포츠", "미들급"), "675NK": ("네이키드", "미들급"), "450SR": ("스포츠", "쿼터급"),
+    "450CL-C BOBBER": ("크루저", "쿼터급"), "450CL-C": ("크루저", "쿼터급"), "450MT": ("어드벤처", "쿼터급"),
+    "800MT-X": ("어드벤처", "미들급"), "450NK": ("네이키드", "쿼터급"),
+    "R 1300 RT": ("투어러", "리터급"), "R 12 NineT": ("클래식", "리터급"), "M 1000 RR": ("슈퍼스포츠", "리터급"),
+    "F 900XR": ("어드벤처", "미들급"), "R 12 GS": ("어드벤처", "리터급"), "K 1600 B": ("투어러", "리터급"),
+    "R 18 Transcontinental": ("투어러", "리터급"), "R 1250 GS ADV": ("어드벤처", "리터급"),
+    "Bonneville T120": ("클래식", "리터급"), "SCRAMBLER 400X": ("클래식", "쿼터급"),
+    "TIGER 900 GT PRO": ("어드벤처", "미들급"), "Daytona660": ("스포츠", "미들급"),
+    "CBR1000RR-R": ("슈퍼스포츠", "리터급"), "CBR600RR": ("슈퍼스포츠", "미들급"), "CBR650R E-Clutch": ("스포츠", "미들급"),
+    "Super cub 110": ("커브", "소형"), "CT125A 헌터커브": ("커브", "소형"), "REBEL500": ("크루저", "미들급"),
+    "NX500": ("어드벤처", "미들급"), "NT1100 DCT": ("투어러", "리터급"), "GB350C": ("클래식", "쿼터급"),
+    "CB1000SP": ("네이키드", "리터급"), "CB300NA": ("네이키드", "쿼터급"),
+    "VITPILEN 125": ("네이키드", "소형"), "VITPILEN 701": ("네이키드", "미들급"),
+    "SVARTPILEN125": ("네이키드", "소형"), "SVARTPILEN 401": ("네이키드", "쿼터급"),
+    "XSR900GP(ABS)": ("클래식", "미들급"), "Guerrilla 450": ("네이키드", "쿼터급"),
+}
+CC_ORDER = ["소형", "쿼터급", "미들급", "리터급"]
+
+
+def time_pref(hour: float) -> str | None:
+    if pd.isna(hour):
+        return None
+    h = int(hour)
+    if 17 <= h <= 20:
+        return "저녁형"
+    if h >= 21 or h <= 5:
+        return "심야형"
+    if 6 <= h <= 9:
+        return "새벽·오전형"
+    return "낮형"
+
+
+def load_payments() -> pd.DataFrame | None:
+    """결제내역_<날짜>_전체.xlsx 의 '결제상세' 시트. 여러 파일이면 합치고 (결제일, 고객명, 예약일, 차종)로 중복 제거."""
+    files = sorted(RAW_DIR.glob("결제내역_*_전체.xlsx"))
+    if not files:
+        return None
+    frames = [pd.read_excel(f, sheet_name="결제상세", dtype=str) for f in files]
+    P = pd.concat(frames, ignore_index=True)
+    P.columns = [c.strip() for c in P.columns]
+    P = P.drop_duplicates(["결제일", "고객명", "예약일", "차종"])
+    P["결제일시"] = pd.to_datetime(P["결제일"], format="%Y.%m.%d %H:%M", errors="coerce")
+    P["예약시작"] = pd.to_datetime(P["예약일"] + " " + P["예약시작시간"], format="%Y.%m.%d %H:%M", errors="coerce")
+    P["반납예정"] = pd.to_datetime(P["반납예정일"] + " " + P["반납예정시간"], format="%Y.%m.%d %H:%M", errors="coerce")
+    for c in ["결제금액", "취소금액", "환불금액", "위약금액", "시작주행거리", "반납주행거리"]:
+        P[c] = pd.to_numeric(P[c], errors="coerce")
+    P["순결제"] = P["결제금액"].fillna(0) - P["환불금액"].fillna(0)
+    P["취소"] = P["취소금액"].fillna(0) > 0
+    P["이용시간"] = (P["반납예정"] - P["예약시작"]).dt.total_seconds() / 3600
+    P["주행거리"] = P["반납주행거리"] - P["시작주행거리"]
+    P["모델"] = P["차종"].str.split(" / ").str[0].str.strip()
+    P["장르"] = P["모델"].map(lambda m: MODEL_INFO.get(m, ("기타", "미상"))[0])
+    P["배기량대"] = P["모델"].map(lambda m: MODEL_INFO.get(m, ("기타", "미상"))[1])
+    P["시작시"] = P["예약시작"].dt.hour
+    P["주말"] = P["예약시작"].dt.dayofweek >= 5
+    P["연락처_정규화"] = P["연락처"].map(normalize_phone)
+    P["이메일_소문자"] = P["이메일"].str.strip().str.lower()
+    P["프로모"] = P["프로모코드"].notna()
+    return P
+
+
+def customer_aggregates(P: pd.DataFrame, cutoff: pd.Timestamp) -> pd.DataFrame:
+    """고객 키(연락처 → 이메일 → 고객명)별 이용 집계."""
+    P = P.copy()
+    P["고객키"] = P["연락처_정규화"].fillna(P["이메일_소문자"]).fillna(P["고객명"])
+    V = P[~P["취소"]]
+
+    def mode(x):
+        x = x.dropna()
+        return x.mode().iloc[0] if len(x) else None
+
+    g = V.groupby("고객키")
+    A = pd.DataFrame({
+        "결제횟수": g.size(),
+        "순결제금액": g["순결제"].sum().round(0),
+        "첫예약일": g["예약시작"].min().dt.date,
+        "최근예약일": g["예약시작"].max().dt.date,
+        "주지점": g["예약 지점"].agg(mode),
+        "이용지점수": g["예약 지점"].nunique(),
+        "취향브랜드": g["브랜드"].agg(mode),
+        "취향장르": g["장르"].agg(mode),
+        "이용장르": g["장르"].agg(lambda x: ",".join(sorted(set(x.dropna())))),
+        "이용모델": g["모델"].agg(lambda x: ",".join(sorted(set(x.dropna())))),
+        "최대배기량": g["배기량대"].agg(lambda x: max((c for c in x if c in CC_ORDER), key=CC_ORDER.index, default=None)),
+        "평균이용시간": g["이용시간"].mean().round(1),
+        "주말비율": g["주말"].mean().round(2),
+        "시간성향": g["시작시"].agg(lambda x: time_pref(x.mode().iloc[0]) if len(x.dropna()) else None),
+        "유입경로_결제": g["유입경로"].agg(mode),
+        "프로모사용": g["프로모"].any(),
+    })
+    C = P.groupby("고객키").agg(취소횟수=("취소", "sum"))
+    A = A.join(C, how="outer")
+    A["결제횟수"] = A["결제횟수"].fillna(0).astype(int)
+    A["취소횟수"] = A["취소횟수"].fillna(0).astype(int)
+    A["최근성_일"] = (cutoff - pd.to_datetime(A["최근예약일"])).dt.days
+    A["첫이용_경과일"] = (cutoff - pd.to_datetime(A["첫예약일"])).dt.days
+    A["주말성향"] = A["주말비율"].map(lambda v: None if pd.isna(v) else ("Y" if v >= 0.5 else "N"))
+    A["리터급경험"] = A["이용장르"].notna() & A["최대배기량"].eq("리터급")
+    return A.reset_index()
+
+
+def merge_payments(df: pd.DataFrame, A: pd.DataFrame | None) -> pd.DataFrame:
+    cols = [c for c in A.columns if c != "고객키"] if A is not None else []
+    if A is None:
+        df["결제회원"] = False
+        return df
+    by_phone = A.set_index("고객키")
+    df["_key"] = df["연락처_정규화"]
+    df.loc[df["_key"].isna() | ~df["_key"].isin(by_phone.index), "_key"] = df["이메일_소문자"]
+    df = df.merge(A, left_on="_key", right_on="고객키", how="left").drop(columns=["_key", "고객키"])
+    df["결제회원"] = df["결제횟수"].fillna(0).gt(0)
+    df["결제횟수"] = df["결제횟수"].fillna(0).astype(int)
+    df["취소횟수"] = df["취소횟수"].fillna(0).astype(int)
+    return df
+
+
+def payment_summary(P: pd.DataFrame | None, A: pd.DataFrame | None, df: pd.DataFrame) -> dict | None:
+    if P is None:
+        return None
+    V = P[~P["취소"]]
+    paying = df[df["결제회원"]]
+    matched_keys = set(paying["연락처_정규화"].dropna()) | set(paying["이메일_소문자"].dropna())
+    return {
+        "period": f"{P['결제일시'].min():%Y-%m-%d} ~ {P['결제일시'].max():%Y-%m-%d}",
+        "rows": int(len(P)), "valid_rows": int(len(V)), "cancel_rows": int(P["취소"].sum()),
+        "cancel_rate_pct": round(P["취소"].mean() * 100, 1),
+        "gross": int(P["결제금액"].sum()), "refund": int(P["환불금액"].sum()), "penalty": int(P["위약금액"].sum()),
+        "net": int(P["순결제"].sum()),
+        "customers": int(A["고객키"].nunique()), "repeat_2plus": int((A["결제횟수"] >= 2).sum()),
+        "repeat_3plus": int((A["결제횟수"] >= 3).sum()),
+        "median_net_per_customer": float(A["순결제금액"].median()),
+        "by_branch": V.groupby("예약 지점").agg(건수=("순결제", "size"), 순매출=("순결제", "sum")).astype(int).to_dict(orient="index"),
+        "by_brand": V["브랜드"].value_counts().to_dict(),
+        "by_genre": V["장르"].value_counts().to_dict(),
+        "by_cc": V["배기량대"].value_counts().to_dict(),
+        "by_model_top": V["모델"].value_counts().head(15).to_dict(),
+        "by_source": V["유입경로"].value_counts().to_dict(),
+        "promo_rows": int(V["프로모"].sum()), "promo_codes": V["프로모코드"].value_counts().to_dict(),
+        "by_hour": {int(k): int(v) for k, v in V["시작시"].value_counts().sort_index().items()},
+        "by_weekday": {int(k): int(v) for k, v in V["예약시작"].dt.dayofweek.value_counts().sort_index().items()},
+        "time_pref": A["시간성향"].value_counts().to_dict(),
+        "weekend_pref": A["주말성향"].value_counts().to_dict(),
+        "duration_quantiles": {str(k): round(v, 1) for k, v in V["이용시간"].quantile([.25, .5, .75, .9]).items()},
+        "members_paying": int(len(paying)),
+        "paying_survey_done": int(paying["설문완료_bool"].sum()),
+        "paying_consent_yes": int((paying[COL["consent"]] == "동의").sum()),
+        "paying_consent_no": int((paying[COL["consent"]] == "미동의").sum()),
+        "paying_consent_unasked": int((paying["마케팅상태"] == "미응답").sum()),
+        "paying_rca": int(paying["RCA회원"].sum()),
+        "members_not_paying": int((~df["결제회원"] & ~df["마케팅제외"]).sum()),
+    }
+
+
 def load_extra_sources() -> dict[str, pd.DataFrame]:
     """추후 업로드되는 예약/렌탈/결제(세분화_기준표적용.xlsx 등) 병합 지점. 현재는 비어 있다."""
     return {}
@@ -286,22 +496,50 @@ def _has(col, val):
     return lambda d: d[col + "_list"].map(lambda l: val in l)
 
 
+def _pay(col):
+    return lambda d: d[col] if col in d.columns else pd.Series(pd.NA, index=d.index)
+
+
 PERSONA_DEFS = [
+    ("P01_퇴근후직장인", "문자 페르소나 ① 퇴근 후 직장인 (실측)",
+     "결제 고객 중 시간성향 저녁형(17~20시). 결제 이력 없으면 설문 '평일 저녁'",
+     lambda d: _pay("시간성향")(d).eq("저녁형") | (~d["결제회원"] & _has(COL["q_when"], "평일 저녁")(d))),
+    ("P02_주말애아빠후보", "문자 페르소나 ② 주말 짬내는 애아빠 (연령 제외 실측)",
+     "결제 고객 중 주말성향 Y + 평균이용 2~4시간. 결제 없으면 설문 '주말 오전'",
+     lambda d: (_pay("주말성향")(d).eq("Y") & _pay("평균이용시간")(d).between(2, 4))
+               | (~d["결제회원"] & _has(COL["q_when"], "주말 오전")(d))),
+    ("P03_교육수료실전파", "문자 페르소나 ③ 교육 수료 실전파 (실측)",
+     "RCA 수강 1회 이상 + 렌탈 미결제",
+     lambda d: pd.to_numeric(d["RCA_수강횟수"], errors="coerce").fillna(0).ge(1) & ~d["결제회원"]),
+    ("P04_야간라이딩족", "문자 페르소나 ④ 야간 라이딩족 (실측)",
+     "결제 고객 중 시간성향 심야형(21시~05시)",
+     lambda d: _pay("시간성향")(d).eq("심야형")),
+    ("P05_얼리버드", "문자 페르소나 ⑤ 얼리버드 아침형 (실측)",
+     "결제 고객 중 시간성향 새벽·오전형(06~09시). 결제 없으면 설문 '새벽'",
+     lambda d: _pay("시간성향")(d).eq("새벽·오전형") | (~d["결제회원"] & _has(COL["q_when"], "새벽")(d))),
+    ("P06_복귀라이더", "문자 페르소나 ⑥ 복귀 라이더 (설문 기반)",
+     "렌탈 목적 '오랜만에 라이딩(재입문)'. 휴면+과거 2회 이상은 이용 이력이 길어져야 판정 가능",
+     _has(COL["q_purpose"], "오랜만에 라이딩 (재입문)")),
+    ("P07_투어러", "문자 페르소나 ⑦ 중장년 투어러 (연령 제외)",
+     "결제 취향장르 투어러/클래식, 또는 설문 목적 '투어링'",
+     lambda d: _pay("취향장르")(d).isin(["투어러", "클래식"]) | _has(COL["q_purpose"], "투어링 (당일/박투어)")(d)),
+    ("P08_스텝업", "문자 페르소나 ⑧ 스텝업 지망생 (실측)",
+     "결제 고객 중 최대 이용 배기량 쿼터·미들급(리터급 미경험). 결제 없으면 설문 보유 쿼터·미들급",
+     lambda d: (d["결제회원"] & _pay("최대배기량")(d).isin(["쿼터급", "미들급"]))
+               | (~d["결제회원"] & d["보유바이크_급"].isin(["쿼터급", "미들급"]))),
+    ("L_첫이용30일", "생애주기 CP011 첫이용 30일 재방문",
+     "결제 1회 + 첫 이용 후 27~35일 경과 (기준일 대비)",
+     lambda d: d["결제회원"] & d["결제횟수"].eq(1) & _pay("첫이용_경과일")(d).between(27, 35)),
+    ("L_프로모전환자", "생애주기 CP009 전환자 재방문 쿠폰",
+     "프로모코드로 결제한 고객 (동일 할인 재발송 금지 그룹)",
+     lambda d: d["결제회원"] & _pay("프로모사용")(d).eq(True)),
+    ("L_단골2회이상", "생애주기 CP008 이탈위험 win-back 후보",
+     "결제 2회 이상. 최근성 30일 넘으면 win-back 대상",
+     lambda d: d["결제회원"] & d["결제횟수"].ge(2)),
+    ("L_회원_미결제", "퍼널: 회원이지만 결제 이력 없음",
+     "회원 + 결제 0회 (조회 기간 07-01~08-13 기준)",
+     lambda d: ~d["결제회원"]),
     # (태그, 전략문서 명칭, 근거 조건 설명, 필터)
-    ("P01_퇴근후직장인", "문자 페르소나 ① / 세그먼트 ⑪ 퇴근 라이더",
-     "라이딩 시간대에 '평일 저녁' 포함", _has(COL["q_when"], "평일 저녁")),
-    ("P02_주말오전형", "문자 페르소나 ② 주말 짬내는 애아빠(후보)",
-     "라이딩 시간대에 '주말 오전' 포함 (연령·자녀 정보 없음 → 후보군)", _has(COL["q_when"], "주말 오전")),
-    ("P03_레인조교육생", "문자 페르소나 ③ 교육 수료 실전파 / 우선순위 5점",
-     "알게 된 경로 = 레인조아카데미", _has(COL["q_source"], "레인조아카데미")),
-    ("P05_얼리버드", "문자 페르소나 ⑤ / 세그먼트 ⑫ 새벽 라이더",
-     "라이딩 시간대에 '새벽' 포함", _has(COL["q_when"], "새벽")),
-    ("P06_복귀라이더", "문자 페르소나 ⑥ / 세그먼트 ① 휴면 라이더 / 우선순위 5점",
-     "렌탈 목적에 '오랜만에 라이딩 (재입문)' 포함", _has(COL["q_purpose"], "오랜만에 라이딩 (재입문)")),
-    ("P07_투어러", "문자 페르소나 ⑦ 중장년 투어러(후보) / 세그먼트 ⑨ 캠핑·여행족",
-     "렌탈 목적에 '투어링' 포함 (연령 없음 → Kakao 가입이면 중장년 가능성)", _has(COL["q_purpose"], "투어링 (당일/박투어)")),
-    ("P08_스텝업", "문자 페르소나 ⑧ 스텝업 지망생",
-     "보유 바이크 쿼터급/미들급", lambda d: d["보유바이크_급"].isin(["쿼터급", "미들급"])),
     ("S05_장롱면허입문", "세그먼트 ⑤ 장롱면허 / 보험 소구 1순위",
      "경력 3개월 미만 + 바이크 없음, 또는 목적 '입문 전 연습'",
      lambda d: (d[COL["q_exp"]].eq("3개월 미만") & d["보유바이크_급"].eq("없음")) | _has(COL["q_purpose"], "입문 전 연습")(d)),
@@ -326,7 +564,7 @@ PERSONA_DEFS = [
 MOTIVE_GROUPS = {
     "다시 시작하고 싶다": ["P06_복귀라이더", "S05_장롱면허입문"],
     "사기 전에 확인하고 싶다": ["S06_기변기추예정", "X_구매직전"],
-    "시간이 부족하다": ["P01_퇴근후직장인", "P02_주말오전형"],
+    "시간이 부족하다": ["P01_퇴근후직장인", "P02_주말애아빠후보"],
     "새로운 취미를 찾는다": ["S05_장롱면허입문"],
     "특별한 경험을 원한다": ["S10_커플데이트", "P07_투어러"],
     "불안해서 망설인다": ["S05_장롱면허입문", "P06_복귀라이더", "X_고가기종시승"],
@@ -337,7 +575,11 @@ def assign_personas(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, pd.Series
     tags = [[] for _ in range(len(df))]
     masks: dict[str, pd.Series] = {}
     for tag, _name, _why, fn in PERSONA_DEFS:
-        m = fn(df).fillna(False).astype(bool) & df["설문완료_bool"] & ~df["마케팅제외"]
+        m = fn(df).fillna(False).astype(bool) & ~df["마케팅제외"]
+        if tag.startswith(("P03", "P04", "L_")) or (tag.startswith("P") and "결제회원" in df.columns):
+            pass  # 실측 기반 태그는 설문 완료 여부와 무관
+        else:
+            m = m & df["설문완료_bool"]
         masks[tag] = m
         for pos in range(len(df)):
             if m.iloc[pos]:
@@ -393,6 +635,24 @@ SEGMENT_DEFS = [
     ("S13", "미설문_이메일만",
      "설문 미완료 + 연락처 없음. 이메일 기반 설문 유도.",
      lambda d: ~d["설문완료_bool"] & ~d["연락처_유효"] & d[COL["email"]].notna()),
+    ("S16", "RCA교차_수강경험",
+     "레인조 수강 1회 이상 + 아르테파인 회원. RCA 브릿지 캠페인(경험 소구만, 가격 소구 금지). 렌탈 결제 이력 붙으면 '미결제'로 좁힌다.",
+     lambda d: d["RCA회원"] & pd.to_numeric(d["RCA_수강횟수"], errors="coerce").fillna(0).ge(1)),
+    ("S17", "RCA교차_미수강",
+     "레인조 가입만 하고 미수강 + 아르테파인 회원. 문서 규칙(R3)대로 렌탈 광고 중단, 교육 모집만.",
+     lambda d: d["RCA회원"] & pd.to_numeric(d["RCA_수강횟수"], errors="coerce").fillna(0).eq(0)),
+    ("S18", "결제고객_전체",
+     "조회 기간 내 유효 결제 1회 이상. 거래 관계가 있어 정보성 안내 가능. 광고는 동의자만.",
+     lambda d: d["결제회원"]),
+    ("S19", "결제고객_동의미응답",
+     "결제 고객인데 마케팅 동의를 물어본 적 없음. 앱 로그인 시 동의 모달 1순위 노출 대상.",
+     lambda d: d["결제회원"] & d["마케팅상태"].eq("미응답")),
+    ("S20", "결제고객_재이용2회이상",
+     "단골. 멤버십·로테이션 안내·LTV 상위는 지점 전화.",
+     lambda d: d["결제회원"] & d["결제횟수"].ge(2)),
+    ("S21", "결제고객_취소만",
+     "결제했지만 전부 취소된 고객. 취소 사유 확인·재예약 유도.",
+     lambda d: ~d["결제회원"] & d["취소횟수"].ge(1)),
     ("S14", "데이터정리_중복계정",
      "동일 연락처 다중 계정. 계정 통합/대표계정 확정 필요.",
      lambda d: d["중복그룹"].notna()),
@@ -404,7 +664,9 @@ SEGMENT_DEFS = [
 EXPORT_COLS = [
     COL["no"], COL["name"], "실명", COL["nick"], COL["email"], "연락처_정규화", "연락처_원본", COL["platform"], COL["role"],
     COL["branch"], COL["fav_branch"], COL["joined"], COL["consent"], COL["consent_at"], COL["consent_src"],
-    COL["survey_done"], COL["survey_at"], "리드스코어", "리드등급", "세그먼트", "페르소나", "동기그룹", "중복그룹", "대표계정", "마케팅제외", "탈퇴", "회원관리_번호",
+    COL["survey_done"], COL["survey_at"], "리드스코어", "리드등급", "세그먼트", "페르소나", "동기그룹", "중복그룹", "대표계정", "마케팅제외", "탈퇴", "회원관리_번호", "RCA회원", "RCA구분", "RCA_수강횟수", "RCA_등급",
+    "결제회원", "결제횟수", "취소횟수", "순결제금액", "첫예약일", "최근예약일", "최근성_일", "주지점", "취향브랜드", "취향장르", "이용모델",
+    "최대배기량", "평균이용시간", "주말성향", "시간성향", "유입경로_결제", "프로모사용",
     COL["q_source"], COL["q_exp"], "보유바이크_급", "보유바이크_모델", COL["q_purpose"], COL["q_reason"],
     COL["q_buy"], COL["q_when"], COL["q_factor"], COL["q_next"], COL["q_wish"],
 ]
@@ -569,6 +831,26 @@ def build_summary(df: pd.DataFrame, seg_frames: dict[str, pd.DataFrame], src: Pa
     return summary
 
 
+def rca_summary(df: pd.DataFrame, rca: pd.DataFrame | None) -> dict | None:
+    if rca is None:
+        return None
+    cross = df[df["RCA회원"]]
+    return {
+        "rca_total": int(len(rca)),
+        "rca_by_group": rca["RCA구분"].value_counts().to_dict(),
+        "rca_vip": int((rca["RCA_등급"] == "VIP").sum()),
+        "rca_by_year": rca["RCA_가입일"].str[:4].value_counts().sort_index().to_dict(),
+        "rca_valid_phone": int(rca["RCA_연락처"].notna().sum()),
+        "cross_members": int(len(cross)),
+        "cross_by_group": cross["RCA구분"].value_counts().to_dict(),
+        "cross_survey_done": int(cross["설문완료_bool"].sum()),
+        "cross_consent_yes": int((cross[COL["consent"]] == "동의").sum()),
+        "cross_consent_no": int((cross[COL["consent"]] == "미동의").sum()),
+        "rca_only_by_group": rca[~rca["아르테파인회원"]]["RCA구분"].value_counts().to_dict(),
+        "heavy_min_courses": RCA_HEAVY_MIN,
+    }
+
+
 def write_markdown(summary: dict, path: Path) -> None:
     o = summary["overview"]
     sv = summary["survey"]
@@ -663,6 +945,40 @@ def write_markdown(summary: dict, path: Path) -> None:
     for p in summary["personas"]:
         L.append(f"| {p['tag']} | {p['framework_name']} | {p['condition']} | {p['count']} | {p['with_consent']} |")
     L.append("\n동기 그룹별 인원(중복 포함): " + ", ".join(f"{g} {n}명" for g, n in summary["motive_groups"].items()))
+    rc = summary.get("rca")
+    if rc:
+        L.append("\n## 9. 레인조아카데미(RCA) DB 교차\n")
+        L.append("| 항목 | 값 |\n|---|---|")
+        L.append(f"| RCA 회원 전체 | {rc['rca_total']:,} (VIP {rc['rca_vip']}) |")
+        L.append(f"| RCA 구분 (R1 헤비 = {rc['heavy_min_courses']}회 이상) | " + ", ".join(f"{k} {v:,}" for k, v in sorted(rc['rca_by_group'].items())) + " |")
+        L.append(f"| RCA 가입 연도 | " + ", ".join(f"{k} {v:,}" for k, v in rc['rca_by_year'].items()) + " |")
+        L.append(f"| 아르테파인 회원과 교차 | {rc['cross_members']:,} (" + ", ".join(f"{k} {v}" for k, v in sorted(rc['cross_by_group'].items())) + ") |")
+        L.append(f"| 교차 회원의 설문 완료 / 동의 / 미동의 | {rc['cross_survey_done']} / {rc['cross_consent_yes']} / {rc['cross_consent_no']} |")
+        L.append(f"| RCA 전용(아르테파인 비회원) | " + ", ".join(f"{k} {v:,}" for k, v in sorted(rc['rca_only_by_group'].items())) + " |")
+        L.append("\nRCA DB에는 광고 수신 동의 컬럼이 없다. RCA 명단으로 광고 문자를 보내려면 레인조 측 동의 근거를 별도로 확인해야 한다.\n")
+    py = summary.get("payments")
+    if py:
+        L.append("\n## 10. 결제(렌탈) 내역 요약\n")
+        L.append("| 항목 | 값 |\n|---|---|")
+        L.append(f"| 결제일 범위 | {py['period']} |")
+        L.append(f"| 결제 건수 / 유효 / 취소 | {py['rows']} / {py['valid_rows']} / {py['cancel_rows']} (취소율 {py['cancel_rate_pct']}%) |")
+        L.append(f"| 결제금액 / 환불 / 위약금 / 순매출 | {py['gross']:,} / {py['refund']:,} / {py['penalty']:,} / {py['net']:,} |")
+        L.append(f"| 유효 결제 고객 / 2회 이상 / 3회 이상 | {py['customers']} / {py['repeat_2plus']} / {py['repeat_3plus']} |")
+        L.append(f"| 고객당 순결제 중앙값 | {py['median_net_per_customer']:,.0f} |")
+        L.append(f"| 결제 고객 중 회원 매칭 | {py['members_paying']} (설문 {py['paying_survey_done']}, 동의 {py['paying_consent_yes']}, 미동의 {py['paying_consent_no']}, 미응답 {py['paying_consent_unasked']}, RCA 교차 {py['paying_rca']}) |")
+        L.append(f"| 회원 중 결제 이력 없음 | {py['members_not_paying']:,} |")
+        L.append(f"| 프로모코드 결제 | {py['promo_rows']} ({', '.join(f'{k} {v}' for k, v in py['promo_codes'].items())}) |")
+        L.append(f"| 이용시간 분위(25/50/75/90%) | {' / '.join(f'{v}h' for v in py['duration_quantiles'].values())} |")
+        L.append("\n지점별 유효 건수·순매출: " + ", ".join(f"{k} {v['건수']}건 {v['순매출']:,}원" for k, v in py['by_branch'].items()))
+        L.append("\n브랜드: " + ", ".join(f"{k} {v}" for k, v in py['by_brand'].items()))
+        L.append("\n장르: " + ", ".join(f"{k} {v}" for k, v in py['by_genre'].items()))
+        L.append("\n배기량대: " + ", ".join(f"{k} {v}" for k, v in py['by_cc'].items()))
+        L.append("\n모델 상위: " + ", ".join(f"{k} {v}" for k, v in py['by_model_top'].items()))
+        L.append("\n유입경로(결제 시): " + ", ".join(f"{k} {v}" for k, v in py['by_source'].items()))
+        L.append("\n예약 시작 시각별 건수: " + ", ".join(f"{k}시 {v}" for k, v in py['by_hour'].items()))
+        L.append("\n요일별 건수(0=월): " + ", ".join(f"{k} {v}" for k, v in py['by_weekday'].items()))
+        L.append("\n고객 시간성향: " + ", ".join(f"{k} {v}" for k, v in py['time_pref'].items()) + " · 주말성향: " + ", ".join(f"{k} {v}" for k, v in py['weekend_pref'].items()))
+        L.append("")
     ma = summary["member_admin"]
     L.append(f"\n회원관리 파일 매칭: {ma['matched']:,}명 실명 확인 / 미매칭 {ma['unmatched']:,}명 / 탈퇴 {ma['withdrawn']}명\n")
     L.append("\n세그먼트별 명단은 `crm/output/CRM_마스터_*.xlsx` 의 각 시트에 있다(개인정보 포함, git 미추적).\n")
@@ -672,7 +988,8 @@ def write_markdown(summary: dict, path: Path) -> None:
 # ---------------------------------------------------------------------------
 # 출력
 # ---------------------------------------------------------------------------
-def write_excel(df: pd.DataFrame, seg_frames: dict[str, pd.DataFrame], summary: dict, path: Path) -> None:
+def write_excel(df: pd.DataFrame, seg_frames: dict[str, pd.DataFrame], summary: dict, path: Path,
+                rca: pd.DataFrame | None = None) -> None:
     def prep(d: pd.DataFrame) -> pd.DataFrame:
         out = d[EXPORT_COLS].copy()
         out["대표계정"] = out["대표계정"].map({True: "Y", False: "N"})
@@ -688,6 +1005,12 @@ def write_excel(df: pd.DataFrame, seg_frames: dict[str, pd.DataFrame], summary: 
         prep(df).to_excel(xw, sheet_name="회원마스터", index=False)
         for name, d in seg_frames.items():
             prep(d).to_excel(xw, sheet_name=name[:31], index=False)
+        if rca is not None:
+            rc = rca.rename(columns={"아르테파인회원": "아르테파인회원"}).copy()
+            rc["아르테파인회원"] = rc["아르테파인회원"].map({True: "Y", False: ""})
+            rc.sort_values(["RCA_수강횟수", "RCA_가입일"], ascending=[False, False]).to_excel(xw, sheet_name="RCA_전체", index=False)
+            for g in ["R1_헤비", "R2_수강경험", "R3_미수강"]:
+                rc[rc["RCA구분"] == g].to_excel(xw, sheet_name=f"RCA_{g}"[:31], index=False)
 
         # 열 너비 보정
         for ws in xw.book.worksheets:
@@ -706,6 +1029,11 @@ def main() -> None:
 
     df = load_master(src)
     df = merge_member_admin(df, load_member_admin())
+    df, rca = merge_rca(df, load_rca())
+    P = load_payments()
+    cutoff_ts = pd.Timestamp(df[COL["joined"]].max())
+    A = customer_aggregates(P, cutoff_ts) if P is not None else None
+    df = merge_payments(df, A)
     df = mark_duplicates(df)
     df, seg_masks = assign_segments(df)
     df, persona_masks = assign_personas(df)
@@ -713,10 +1041,12 @@ def main() -> None:
     for tag, _n, _w, _f in PERSONA_DEFS:
         seg_frames[tag] = df[persona_masks[tag]]
     summary = build_summary(df, seg_frames, src)
+    summary["rca"] = rca_summary(df, rca)
+    summary["payments"] = payment_summary(P, A, df)
 
     cutoff = summary["meta"]["data_cutoff"]
     xlsx = OUT_DIR / f"CRM_마스터_{cutoff}.xlsx"
-    write_excel(df, seg_frames, summary, xlsx)
+    write_excel(df, seg_frames, summary, xlsx, rca)
     (OUT_DIR / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=int), encoding="utf-8")
     write_markdown(summary, OUT_DIR / "분석요약.md")
 
