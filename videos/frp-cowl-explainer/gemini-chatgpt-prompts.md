@@ -25,15 +25,19 @@
 
 ---
 
-## 클립 1 (0–8초) — 훅 + 순정 카울 산산조각
+## 클립 1 (0–8초) — 오토바이가 땅에 닿는 순간부터 부서짐
 
 ```
 Vertical 9:16 video, 8 seconds, stylized 3D CGI look, bright sunny day at a racetrack, clear blue sky, grey asphalt, red and white curbs.
-A sportbike with a glossy red stock fairing low-sides in a corner. The red fairing hits the asphalt and shatters into dozens of sharp jagged plastic fragments that scatter across the track in slow motion, with a dust puff. Camera: low angle, slight shake on impact.
-Sound: engine, a loud crack on impact, plastic pieces skittering on asphalt.
+The clip starts at the exact moment a sportbike with a glossy red stock fairing is already sliding down onto its side in a corner. Frame 1: the bike's side and its red fairing touch the asphalt. From that first contact the red fairing cracks and shatters into dozens of sharp jagged plastic fragments that spray outward and scatter across the track in slow motion, while the bike keeps sliding on its side with sparks from the footpeg and a dust puff behind it. The rider, in black leathers, slides separately and safely on the grass beside the track. Camera: low ground-level angle, close to the fairing, slight shake on impact, slow motion.
+Sound: engine cutting out, a loud crack on first contact, plastic pieces skittering on asphalt, metal scraping.
 Korean male voiceover, calm and quick: "서킷 라이더들은 왜 순정 카울을 떼어낼까요? 순정 카울은 넘어지는 순간 산산조각이 나고, 날카로운 파편이 트랙에 흩어집니다."
 No on-screen text, no logos.
 ```
+
+- 핵심은 "클립이 이미 넘어지는 순간에서 시작한다"는 것(`The clip starts at the exact moment…`, `Frame 1:`)입니다. 달리는 장면을 앞에 붙이면 8초 안에 파편 장면이 짧아집니다.
+- 라이더는 사고 장면이 과하게 보이지 않도록 잔디 위로 안전하게 미끄러지는 것으로 명시했습니다. 라이더를 아예 빼고 싶으면 `The rider…` 문장을 지우고 `riderless bike` 를 추가하세요.
+- 파편이 덜 나오면 `dozens of` 를 `hundreds of` 로, 더 과장하려면 `fragments fly toward the camera` 를 덧붙이세요.
 
 ## 클립 2 (8–16초) — 뒤에 오는 라이더 + 적기
 
