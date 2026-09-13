@@ -225,6 +225,7 @@ def survey_snapshots() -> list[dict]:
     return rows
 
 
+SEND_TO_UNASKED = True   # 설문(수신동의 문항) 도입 전 가입자(미응답)에게도 CRM 문자를 보낸다는 운영 결정 (2026-09-13)
 RCA_HEAVY_MIN = 4   # R1 헤비 = 4회 이상 (최종세분화명단의 정의와 일치)
 
 
@@ -297,6 +298,15 @@ MODEL_INFO = {
     "VITPILEN 125": ("네이키드", "소형"), "VITPILEN 701": ("네이키드", "미들급"),
     "SVARTPILEN125": ("네이키드", "소형"), "SVARTPILEN 401": ("네이키드", "쿼터급"),
     "XSR900GP(ABS)": ("클래식", "미들급"), "Guerrilla 450": ("네이키드", "쿼터급"),
+    # 3~6월 라인업 (BMW 중심)
+    "S 1000 RR": ("슈퍼스포츠", "리터급"), "S 1000 R": ("네이키드", "리터급"), "S 1000 XR": ("어드벤처", "리터급"),
+    "M 1000 XR": ("어드벤처", "리터급"), "R 1300 GS": ("어드벤처", "리터급"), "R 1300 GS ADV": ("어드벤처", "리터급"),
+    "R 1300 RS": ("투어러", "리터급"), "R 1300 R": ("네이키드", "리터급"), "R 1250 RT": ("투어러", "리터급"),
+    "R NineT": ("클래식", "리터급"), "R 12 nineT": ("클래식", "리터급"), "R 12 G/S": ("어드벤처", "리터급"), "R 12 G": ("어드벤처", "리터급"),
+    "F 900 GS ADV": ("어드벤처", "미들급"), "F 900 R": ("네이키드", "미들급"), "G 310 R": ("네이키드", "쿼터급"), "G 310 GS": ("어드벤처", "쿼터급"),
+    "CL500A": ("클래식", "미들급"), "CB500X": ("어드벤처", "미들급"), "XL750 TRANSALP": ("어드벤처", "미들급"),
+    "SVARTPILEN401": ("네이키드", "쿼터급"), "MSX125": ("커브", "소형"),
+    "GTS125 SUPER": ("스쿠터", "소형"), "PRIMAVERA 125": ("스쿠터", "소형"), "LX 125": ("스쿠터", "소형"),
 }
 CC_ORDER = ["소형", "쿼터급", "미들급", "리터급"]
 
@@ -325,6 +335,7 @@ def load_payments() -> pd.DataFrame | None:
         d.columns = [c.strip() for c in d.columns]
         if "이메일" not in d.columns:      # 07-24 지점별 구버전(연락처 없음)은 전체 파일에 포함되므로 건너뜀
             continue
+        d["_파일"] = f.name
         frames.append(d)
     P = pd.concat(frames, ignore_index=True)
     P["결제일"] = P["결제일"].str.strip()
@@ -553,9 +564,12 @@ def unify_history(P: pd.DataFrame | None, H: pd.DataFrame | None) -> pd.DataFram
         Pp = P.rename(columns={"결제일시": "접수"})[["접수", "예약시작", "순결제", "취소", "모델", "장르", "배기량대", "예약 지점", "브랜드", "연락처_정규화", "이메일_소문자"]].copy()
         Pp["출처"] = "결제상세"
         parts.append(Pp)
-        p_start = P["결제일시"].min()
         if H is not None:
-            parts.append(H[H["접수"] < p_start])
+            # 결제상세 파일별 (최소~최대 결제일) 구간 밖의 예약이력만 보강
+            covered = pd.Series(False, index=H.index)
+            for a, b in P.groupby("_파일")["결제일시"].agg(["min", "max"]).itertuples(index=False):
+                covered |= (H["접수"] >= a.normalize()) & (H["접수"] <= b.normalize() + pd.Timedelta(days=1))
+            parts.append(H[~covered])
     else:
         parts.append(H)
     E = pd.concat(parts, ignore_index=True)
@@ -591,12 +605,16 @@ def history_aggregates(E: pd.DataFrame, cutoff: pd.Timestamp) -> pd.DataFrame:
 def load_suppression() -> set[str]:
     """최종세분화명단_*.xlsx 의 수신거부_차단기록 시트 → 연락처 집합."""
     out = set()
-    for f in sorted(RAW_DIR.glob("최종세분화명단_*.xlsx")):
+    for f in list(RAW_DIR.glob("최종세분화명단_*.xlsx")) + list(RAW_DIR.glob("발송용명단_*.xlsx")):
         try:
-            d = pd.read_excel(f, sheet_name="수신거부_차단기록", dtype=str)
+            for h in range(0, 4):
+                d = pd.read_excel(f, sheet_name="수신거부_차단기록", dtype=str, header=h)
+                if "연락처" in d.columns:
+                    break
         except ValueError:
             continue
-        out |= set(d["연락처"].map(normalize_phone).dropna())
+        if "연락처" in d.columns:
+            out |= set(d["연락처"].map(normalize_phone).dropna())
     return out
 
 
@@ -628,17 +646,27 @@ def load_send_log() -> pd.DataFrame | None:
                          "캠페인명": r["캠페인명(자동)"], "채널": r["채널"],
                          "연락처_정규화": normalize_phone(r["연락처"]), "타겟": r["캠페인명(자동)"][:3].strip()})
     # (b) 발송명단_<날짜>_*.xlsx: 시트마다 명단 (이름/연락처/…)
-    meta = {"2026-07-25": ("20260724_promo", "토요발송 T1~T3A"), "2026-07-31": ("20260731_promo", "금요저녁 용산밤바리/인천오션라이딩"),
-            "2026-08-14": ("20260814_연휴", "연휴 심야 LMS 500명 (거래관계/수신동의/미응답)")}
+    # 발송일 → (캠페인 코드, 설명, 사용할 시트 목록(None=자동), 홀드아웃 시트)
+    meta = {"2026-07-25": ("20260724_promo", "토요발송 T1~T3A", None, None),
+            "2026-07-31": ("20260731_promo", "금요저녁 용산밤바리/인천오션라이딩", None, None),
+            "2026-08-07": ("20260807_promo", "금요 17시 지점별 발송 (용산 밤바리/인천/분당 얼리버드, ys·ic·bd_promo)", None, None),
+            "2026-08-14": ("20260814_연휴", "연휴 심야 LMS 500명 (거래관계/수신동의/미응답)", None, None),
+            "2026-08-22": ("20260822RENT_promo", "토요 14시 용산 정가 찍먹 3종 / 인천 반값위크 (RENT-YS/IC)", ["02_명단_용산", "03_명단_인천"], None),
+            "2026-09-04": ("20260904RENT_promo", "금요 2시간 무료 (ys-return/ys-new/ic-0904)", ["02_용산_재방문", "03_용산_신규", "04_인천"], "06_홀드아웃_발송금지")}
     for f in sorted(RAW_DIR.glob("발송명단_*.xlsx")):
         m = re.search(r"(\d{4}-\d{2}-\d{2})", f.name)
         day = m.group(1) if m else None
-        camp, cname = meta.get(day, (f.stem, f.stem))
+        camp, cname, sheets, holdout = meta.get(day, (f.stem, f.stem, None, None))
         xl = pd.ExcelFile(f)
         for sh in xl.sheet_names:
-            if sh.startswith("발송요약") or sh.startswith(("①", "②", "④")):
+            is_holdout = holdout is not None and sh == holdout
+            if sheets is not None and sh not in sheets and not is_holdout:
+                continue
+            if sheets is None and (sh.startswith("발송요약") or sh.startswith(("①", "②", "④"))):
                 continue
             d = pd.read_excel(f, sheet_name=sh, dtype=str)
+            if "전화번호" in d.columns:
+                d = d.rename(columns={"전화번호": "연락처"})
             if "연락처" not in d.columns:      # 제목 행이 있는 레이아웃(연휴 명단 ③)
                 for h in range(1, 6):
                     d = pd.read_excel(f, sheet_name=sh, dtype=str, header=h)
@@ -646,15 +674,23 @@ def load_send_log() -> pd.DataFrame | None:
                         break
             if "연락처" not in d.columns:
                 continue
-            tgt_col = "발송근거" if "발송근거" in d.columns else None
+            tgt_col = next((c for c in ["발송근거", "구분", "세그먼트"] if c in d.columns), None)
             for _, r in d.iterrows():
-                rows.append({"발송일": pd.to_datetime(day), "캠페인": camp, "캠페인명": cname, "채널": "SMS",
-                             "연락처_정규화": normalize_phone(r["연락처"]), "타겟": (r[tgt_col] if tgt_col else sh)})
+                tgt = r[tgt_col] if tgt_col else sh
+                if tgt_col == "세그먼트" and not is_holdout:
+                    prefix = re.sub(r"^\d+_", "", sh).split("(")[0]
+                    tgt = f"{prefix} {tgt}"
+                if is_holdout:
+                    tgt = f"홀드아웃 {tgt}"
+                rows.append({"발송일": pd.to_datetime(day), "캠페인": camp, "캠페인명": cname,
+                             "채널": "미발송(대조군)" if is_holdout else "SMS",
+                             "연락처_정규화": normalize_phone(r["연락처"]), "타겟": tgt})
     if not rows:
         return None
     L = pd.DataFrame(rows).dropna(subset=["연락처_정규화"])
     # 같은 날 같은 사람에게 같은 캠페인이 발송이력 시트와 발송명단 파일 양쪽에 있으면 한 건으로
     L = L.drop_duplicates(["발송일", "연락처_정규화"], keep="first")
+    L["홀드아웃"] = L["채널"].eq("미발송(대조군)")
     return L
 
 
@@ -691,6 +727,7 @@ def attach_conversions(L: pd.DataFrame, E: pd.DataFrame | None, window_days: int
 
 
 def send_aggregates(L: pd.DataFrame) -> pd.DataFrame:
+    L = L[~L["홀드아웃"]]
     g = L.groupby("연락처_정규화")
     A = pd.DataFrame({
         "발송횟수": g.size(),
@@ -712,11 +749,27 @@ MASS_CAMPAIGNS = [
 ]
 
 
+PAY_MAX: pd.Timestamp | None = None   # main()에서 결제상세 최대 결제일로 설정
+
+
+def coverage_note(send_day: pd.Timestamp, window_days: int = 14) -> str:
+    if PAY_MAX is None:
+        return "측정 불가: 결제 데이터 없음"
+    days = (PAY_MAX - send_day).days
+    if days >= window_days:
+        return "명단 전수 대조 (발송 후 14일 내 유효 결제)"
+    if days < 1:
+        return f"측정 불가: 결제 데이터 {PAY_MAX:%m-%d}까지"
+    return f"부분 측정({days}일치): 결제 데이터 {PAY_MAX:%m-%d}까지"
+
+
 def campaign_performance(L: pd.DataFrame) -> pd.DataFrame:
-    g = L.groupby(["발송일", "캠페인", "캠페인명", "타겟"])
+    g = L.groupby(["발송일", "캠페인", "캠페인명", "타겟", "채널"])
     C = pd.DataFrame({"발송": g.size(), "전환자": g["전환"].sum(), "전환매출": g["전환금액"].sum()}).reset_index()
+    C["근거"] = [("대조군(미발송) 동일 창 결제 · " if ch.startswith("미발송") else "") + coverage_note(d)
+               for d, ch in zip(C["발송일"], C["채널"])]
     C["발송일"] = C["발송일"].dt.strftime("%Y-%m-%d")
-    C["근거"] = "명단 전수 대조 (발송 후 14일 내 유효 결제)"
+    C = C.drop(columns=["채널"])
     C = pd.concat([pd.DataFrame(MASS_CAMPAIGNS), C], ignore_index=True)
     C["전환율%"] = (C["전환자"] / C["발송"] * 100).round(1)
     return C.sort_values(["발송일", "타겟"])[["발송일", "캠페인", "캠페인명", "타겟", "발송", "전환자", "전환율%", "전환매출", "근거"]]
@@ -724,6 +777,8 @@ def campaign_performance(L: pd.DataFrame) -> pd.DataFrame:
 
 def recipient_profile(df: pd.DataFrame, L: pd.DataFrame) -> tuple[dict, pd.DataFrame]:
     """문자 수신자의 성격(생애단계·시간성향·주말성향·취향장르·지점·동의상태·설문 페르소나)을 캠페인/타겟별로 집계."""
+    L = L[~L["홀드아웃"]].copy()
+    L["측정가능"] = L["발송일"].map(lambda d: PAY_MAX is not None and (PAY_MAX - d).days >= 14)
     rec = L.merge(df.drop_duplicates("연락처_정규화")[[
         "연락처_정규화", "시간성향", "주말성향", "취향장르", "주지점", "마케팅상태", "이력_이용횟수", "이력_최대배기량",
         "RCA회원", "VIP산정", "설문완료_bool", COL["q_buy"], COL["q_exp"], "가입월"]], on="연락처_정규화", how="left")
@@ -748,12 +803,32 @@ def recipient_profile(df: pd.DataFrame, L: pd.DataFrame) -> tuple[dict, pd.DataF
     T = pd.DataFrame(tables)
     # 전체 수신자 기준 차원별 전환율
     overall = {}
+    recm = rec[rec["측정가능"]]
     for dcol in ["생애단계", "시간성향", "주말성향", "취향장르", "주지점", "마케팅상태", "이력_최대배기량"]:
-        ct = rec.groupby(rec[dcol].fillna("미상"))["전환"].agg(["size", "sum"])
+        ct = recm.groupby(recm[dcol].fillna("미상"))["전환"].agg(["size", "sum"])
         ct["전환율%"] = (ct["sum"] / ct["size"] * 100).round(1)
         overall[dcol] = ct.rename(columns={"size": "발송", "sum": "전환자"}).sort_values("발송", ascending=False).head(8).to_dict(orient="index")
     return {"by_target": T.to_dict(orient="records"), "by_dimension": overall,
-            "recipients_total": int(rec["연락처_정규화"].nunique()), "recipients_matched": int(rec[rec["매칭"]]["연락처_정규화"].nunique())}, T
+            "recipients_total": int(rec["연락처_정규화"].nunique()), "recipients_matched": int(rec[rec["매칭"]]["연락처_정규화"].nunique()),
+            "measurable_sends": int(recm.shape[0]), "measurable_campaigns": sorted(set(recm["캠페인"])),
+            "pay_max": PAY_MAX.strftime("%Y-%m-%d") if PAY_MAX is not None else None}, T
+
+
+LINEUP_SOURCES = [("발송명단_2026-09-04_2시간무료.xlsx", "07_차종현황", 2, "2026-09-02"),
+                  ("발송명단_2026-08-22_지점별.xlsx", "05_라인업", 3, "2026-08-22")]
+
+
+def load_lineup() -> pd.DataFrame | None:
+    frames = []
+    for fname, sh, h, asof in LINEUP_SOURCES:
+        f = RAW_DIR / fname
+        if not f.exists():
+            continue
+        d = pd.read_excel(f, sheet_name=sh, header=h, dtype=str)
+        d = d[d.iloc[:, 0].isin(["용산", "인천", "분당", "대구", "제주"])]
+        d.insert(0, "기준일", asof)
+        frames.append(d)
+    return pd.concat(frames, ignore_index=True) if frames else None
 
 
 def load_extra_sources() -> dict[str, pd.DataFrame]:
@@ -978,6 +1053,9 @@ SEGMENT_DEFS = [
     ("S21", "결제고객_취소만",
      "결제했지만 전부 취소된 고객. 취소 사유 확인·재예약 유도.",
      lambda d: ~d["결제회원"] & d["취소횟수"].ge(1)),
+    ("S22", "발송가능_전체",
+     "운영 정책상 CRM 문자 발송 가능 풀: 동의자 + 설문 도입 전 미응답자 (미동의·수신거부·제외 계정 제외, 유효 연락처).",
+     lambda d: d["발송가능"]),
     ("S14", "데이터정리_중복계정",
      "동일 연락처 다중 계정. 계정 통합/대표계정 확정 필요.",
      lambda d: d["중복그룹"].notna()),
@@ -993,7 +1071,7 @@ EXPORT_COLS = [
     "결제회원", "결제횟수", "취소횟수", "순결제금액", "첫예약일", "최근예약일", "최근성_일", "주지점", "취향브랜드", "취향장르", "이용모델",
     "최대배기량", "평균이용시간", "주말성향", "시간성향", "유입경로_결제", "프로모사용",
     "이력고객", "이력_이용횟수", "이력_이용금액", "이력_첫이용일", "이력_최근이용일", "이력_최근성_일", "이력_최대배기량", "이력_이용장르", "생애단계",
-    "VIP산정", "기존VIP", "기존세그먼트", "수신거부", "발송횟수", "최근발송일", "발송캠페인", "발송후전환", "발송전환금액",
+    "VIP산정", "기존VIP", "기존세그먼트", "수신거부", "발송가능", "발송횟수", "최근발송일", "발송캠페인", "발송후전환", "발송전환금액",
     COL["q_source"], COL["q_exp"], "보유바이크_급", "보유바이크_모델", COL["q_purpose"], COL["q_reason"],
     COL["q_buy"], COL["q_when"], COL["q_factor"], COL["q_next"], COL["q_wish"],
 ]
@@ -1106,6 +1184,7 @@ def build_summary(df: pd.DataFrame, seg_frames: dict[str, pd.DataFrame], src: Pa
             "first_consent_date": df[COL["consent_at"]].dropna().min(),
             "roles": df[COL["role"]].value_counts().to_dict(),
             "marketing_excluded_accounts": int(df["마케팅제외"].sum()),
+            "sendable_policy": int(df["발송가능"].sum()) if "발송가능" in df.columns else None,
         },
         "by_month": by_month.to_dict(orient="records"),
         "by_platform": by_platform.to_dict(orient="records"),
@@ -1203,10 +1282,11 @@ def history_summary(df: pd.DataFrame, E: pd.DataFrame | None) -> dict | None:
 
 def send_summary(L: pd.DataFrame) -> dict:
     C = campaign_performance(L)
-    per = L.groupby("연락처_정규화").size()
-    monthly = L.groupby([L["발송일"].dt.strftime("%Y-%m"), "연락처_정규화"]).size()
+    Ls = L[~L["홀드아웃"]]
+    per = Ls.groupby("연락처_정규화").size()
+    monthly = Ls.groupby([Ls["발송일"].dt.strftime("%Y-%m"), "연락처_정규화"]).size()
     return {
-        "sends": int(len(L)), "recipients": int(per.size),
+        "sends": int(len(Ls)), "recipients": int(per.size), "holdout": int(L["홀드아웃"].sum()),
         "campaigns": C.to_dict(orient="records"),
         "conversion_window_days": 14,
         "over_cap_month": int((monthly > 2).sum()),
@@ -1231,7 +1311,8 @@ def write_markdown(summary: dict, path: Path) -> None:
     L.append(f"| 마케팅 미응답(질문 전 가입) | {o['consent_unasked']:,} |")
     L.append(f"| 동의 + 유효 연락처 (SMS 발송 가능 풀) | {o['consent_yes_with_valid_phone']:,} |")
     L.append(f"| 설문/동의 최초 수집일 | {o['first_survey_date']} / {o['first_consent_date']} |")
-    L.append(f"| 마케팅 제외 계정(관리자·매니저·테스트) | {o['marketing_excluded_accounts']} |")
+    L.append(f"| 마케팅 제외 계정(관리자·매니저·테스트·탈퇴·수신거부) | {o['marketing_excluded_accounts']} |")
+    L.append(f"| 발송 가능(동의 + 설문 도입 전 미응답, 유효 연락처) | {o['sendable_policy']:,} |")
     L.append("\n## 2. 월별 가입 추이\n")
     L.append("| 가입월 | 가입 | 설문완료 | 마케팅동의 |\n|---|---|---|---|")
     for r in summary["by_month"]:
@@ -1378,7 +1459,7 @@ def write_markdown(summary: dict, path: Path) -> None:
     ss = summary.get("sends")
     if ss:
         L.append(f"\n## 13. 문자 발송 이력과 명단 전수 대조 전환 (발송 후 {ss['conversion_window_days']}일 내 유효 결제)\n")
-        L.append(f"발송 {ss['sends']}건 / 수신자 {ss['recipients']}명 / 2회 이상 수신 {ss['recipients_2plus']}명 / 월 2통 상한 초과 {ss['over_cap_month']}명\n")
+        L.append(f"발송 {ss['sends']}건 / 수신자 {ss['recipients']}명 / 2회 이상 수신 {ss['recipients_2plus']}명 / 월 2통 상한 초과 {ss['over_cap_month']}명 / 홀드아웃 대조군 {ss.get('holdout', 0)}명\n")
         L.append("| 발송일 | 캠페인 | 타겟 | 발송 | 전환자 | 전환율 | 전환매출 | 근거 |\n|---|---|---|---|---|---|---|---|")
         for r in ss["campaigns"]:
             n = f"{int(r['발송']):,}" if r['발송'] == r['발송'] and r['발송'] is not None else "-"
@@ -1388,7 +1469,7 @@ def write_markdown(summary: dict, path: Path) -> None:
     rp = summary.get("recipient_profile")
     if rp:
         L.append(f"\n## 14. 문자 수신자 프로필 (수신자 {rp['recipients_total']}명, 회원 매칭 {rp['recipients_matched']}명)\n")
-        L.append("차원별 전환율 (개인 명단이 있는 발송 기준. 생애단계는 발송 시점의 상태, 시간성향·장르는 전체 이력 기준):\n")
+        L.append(f"차원별 전환율 — 결제 데이터({rp['pay_max']}까지)로 14일 창이 완전히 덮이는 발송만 집계: {', '.join(rp['measurable_campaigns'])} ({rp['measurable_sends']}건). 생애단계는 발송 시점 상태, 시간성향·장르는 전체 이력 기준:\n")
         for dcol, tbl in rp["by_dimension"].items():
             L.append(f"- **{dcol}**: " + ", ".join(f"{k} {v['발송']}명→{v['전환자']}명({v['전환율%']}%)" for k, v in tbl.items()))
         L.append("\n타겟별 구성(상위 값)과 전환자 특징:\n")
@@ -1413,7 +1494,7 @@ def write_excel(df: pd.DataFrame, seg_frames: dict[str, pd.DataFrame], summary: 
         out["대표계정"] = out["대표계정"].map({True: "Y", False: "N"})
         out["마케팅제외"] = out["마케팅제외"].map({True: "Y", False: ""})
         out["탈퇴"] = out["탈퇴"].map({True: "Y", False: ""})
-        for c in ["이력고객", "VIP산정", "수신거부", "발송후전환"]:
+        for c in ["이력고객", "VIP산정", "수신거부", "발송후전환", "발송가능"]:
             out[c] = out[c].map({True: "Y", False: ""})
         return out.sort_values(["리드스코어", COL["joined"]], ascending=[False, False])
 
@@ -1438,6 +1519,9 @@ def write_excel(df: pd.DataFrame, seg_frames: dict[str, pd.DataFrame], summary: 
             Lx.to_excel(xw, sheet_name="발송이력", index=False)
             if RPT is not None:
                 RPT.to_excel(xw, sheet_name="발송수신자_프로필", index=False)
+        lineup = load_lineup()
+        if lineup is not None:
+            lineup.to_excel(xw, sheet_name="라인업_현황", index=False)
         if WB is not None:
             WB.to_excel(xw, sheet_name="웹_월별", index=False)
             WC.to_excel(xw, sheet_name="웹_캠페인유입", index=False)
@@ -1460,9 +1544,11 @@ def main() -> None:
     df = merge_member_admin(df, load_member_admin())
     df, rca = merge_rca(df, load_rca())
     P = load_payments()
+    global PAY_MAX
     cutoff_ts = pd.Timestamp(df[COL["joined"]].max())
     if P is not None:
-        cutoff_ts = max(cutoff_ts, P["결제일시"].max().normalize())
+        PAY_MAX = P["결제일시"].max().normalize()
+        cutoff_ts = PAY_MAX   # 최근성·생애단계는 결제 데이터가 있는 마지막 날 기준
     A = customer_aggregates(P, cutoff_ts) if P is not None else None
     df = merge_payments(df, A)
     # 3월부터의 이용 이력(예약이력 + 결제상세)
@@ -1478,6 +1564,9 @@ def main() -> None:
     sup = load_suppression()
     df["수신거부"] = df["연락처_정규화"].isin(sup)
     df["마케팅제외"] = df["마케팅제외"] | df["수신거부"]
+    # 발송 정책: 동의자 + (설문 도입 전 가입한 미응답자, SEND_TO_UNASKED=True) 발송. 미동의·수신거부·제외 계정은 불가.
+    df["발송가능"] = ~df["마케팅제외"] & df["연락처_유효"] & (
+        df["마케팅상태"].eq("동의") | (SEND_TO_UNASKED & df["마케팅상태"].eq("미응답")))
     # VIP 재산정: 결제 3건+ / 순결제 20만+ / RCA 교차 + 결제 (최종세분화명단 정의)
     df["VIP산정"] = df["이력_이용횟수"].ge(3) | df["이력_이용금액"].fillna(0).ge(200000) | (df["RCA회원"] & df["이력고객"])
     # 발송 이력
