@@ -19,7 +19,7 @@ const FFMPEG = process.env.FFMPEG || (() => { try { return execFileSync('python3
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(300);
 
-  const times = PREVIEW ? [2.0, 5.6, 6.3, 8.0, 14.0, 17.5, 19.0, 21.2] : Array.from({ length: FPS * DUR }, (_, i) => i / FPS);
+  const times = PREVIEW ? [2.0, 5.6, 8.0, 12.0, 14.0, 18.5, 21.2, 25.0, 29.0] : Array.from({ length: FPS * DUR }, (_, i) => i / FPS);
   let i = 0;
   for (const t of times) {
     await page.evaluate(t => window.seek(t), t);
