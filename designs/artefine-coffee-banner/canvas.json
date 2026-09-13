@@ -4,7 +4,7 @@
     { "file": "MainYellow.dc.html", "title": "A · 노랑 (602×1802)",      "x": 1404, "y": 0, "w": 1204, "h": 3604, "print": "fixed" }
   ],
   "annotations": [
-    { "id": "brief", "x": 0, "y": -300, "w": 1400, "text": "아르테파인 커피라운지 X배너 최종 · 602×1802mm (1px = 0.5mm)\n화살표는 왼쪽(반대쪽)이 기본. 배너 위 칩에서 방향을 바꿀 수 있음.\n인쇄용 PNG(3612×10812px, 약 152dpi)는 저장소 designs/artefine-coffee-banner/export/ 에 있음." }
+    { "id": "brief", "x": 0, "y": -300, "w": 1400, "text": "아르테파인 커피라운지 X배너 최종 · 602×1802mm (1px = 0.5mm)\n화살표는 왼쪽(반대쪽)이 기본. 배너 위 칩에서 방향을 바꿀 수 있음.\n인쇄용 PNG(4816×14416px, 약 203dpi)와 벡터 PDF(602×1802mm)는 저장소 designs/artefine-coffee-banner/export/ 에 있음." }
   ],
   "launch": { "view": "canvas" }
 }
