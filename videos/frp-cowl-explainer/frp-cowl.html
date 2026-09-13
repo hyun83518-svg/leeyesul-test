@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>FRP 카울 30초 설명</title>
+<style>
+  @font-face { font-family: 'NSKR'; src: url('file:///root/.fonts/NotoSansKR-VF.ttf') format('truetype'); font-weight: 100 900; }
+  html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: #8cc4ff; }
+  body { font-family: 'NSKR', 'Noto Sans KR', sans-serif; color: #0f1a2e; }
+  #stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: radial-gradient(60% 35% at 22% 12%, rgba(255,255,255,.85) 0%, rgba(255,255,255,0) 60%), linear-gradient(180deg, #4ea3ff 0%, #8cc4ff 45%, #d9ecff 100%); }
+  #noise { position: absolute; inset: 0; opacity: .05; pointer-events: none; mix-blend-mode: multiply; }
+  .scene { position: absolute; inset: 0; opacity: 0; }
+  .abs { position: absolute; }
+  .t { position: absolute; left: 70px; right: 70px; text-align: center; font-weight: 900; line-height: 1.12; letter-spacing: -0.025em; opacity: 0; will-change: transform, opacity; }
+  .h1 { font-size: 104px; }
+  .h2 { font-size: 84px; }
+  .h3 { font-size: 64px; font-weight: 800; }
+  .sub { font-size: 46px; font-weight: 600; color: #2b3646; letter-spacing: -0.01em; }
+  .yellow { color: #ff6a00; }
+  .red { color: #d81e24; }
+  .cyan { color: #5ac8fa; }
+  .pill { position: absolute; left: 50%; transform: translateX(-50%); padding: 14px 34px; border-radius: 999px; font-size: 40px; font-weight: 700; background: rgba(255,255,255,.78); border: 2px solid rgba(15,26,46,.18); white-space: nowrap; opacity: 0; }
+  .pill.solid { background: #ffd60a; color: #111; border-color: #ffd60a; }
+  .stroke { text-shadow: 0 4px 0 rgba(255,255,255,.7), 0 0 28px rgba(255,255,255,.9), 0 0 60px rgba(255,255,255,.6); }
+
+  /* track */
+  #track { position: absolute; inset: 0; opacity: 0; }
+  #ground { position: absolute; left: 0; right: 0; top: 1250px; bottom: 0; background: linear-gradient(180deg, #9aa1aa 0%, #7d848d 40%, #656b74 100%); }
+  #curb { position: absolute; left: 0; right: 0; top: 1236px; height: 22px; background: repeating-linear-gradient(90deg, #e0262c 0 90px, #f2f2f2 90px 180px); }
+  #horizonglow { position: absolute; left: 0; right: 0; top: 1150px; height: 86px; background: linear-gradient(180deg, #7fb56a, #5f9b4a); }
+  .lane { position: absolute; left: 0; right: 0; height: 6px; background: rgba(255,255,255,.35); }
+
+  .fairing { position: absolute; width: 560px; height: 364px; will-change: transform; }
+  .fairing svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .shard { position: absolute; left: 0; top: 0; width: 560px; height: 364px; will-change: transform, clip-path; }
+  .spark { position: absolute; width: 44px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, rgba(255,240,180,0), #fff3b0 60%, #ffb02e); box-shadow: 0 0 14px 3px rgba(255,150,30,.6); opacity: 0; transform-origin: 100% 50%; }
+  .dust { position: absolute; width: 120px; height: 120px; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.95) 0%, rgba(255,255,255,0) 70%); filter: blur(5px); opacity: 0; }
+  #skid { position: absolute; top: 1246px; height: 18px; left: 0; width: 0; background: linear-gradient(90deg, rgba(0,0,0,0), rgba(0,0,0,.7) 30%, rgba(0,0,0,.85)); border-radius: 9px; }
+  #flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
+  .emoji { position: absolute; font-family: 'Noto Color Emoji', 'NSKR', sans-serif; line-height: 1; opacity: 0; will-change: transform; }
+
+  .card { position: absolute; left: 90px; right: 90px; height: 240px; border-radius: 36px; background: rgba(255,255,255,.82); border: 2px solid rgba(15,26,46,.14); display: flex; align-items: center; gap: 34px; padding: 0 44px; box-sizing: border-box; opacity: 0; }
+  .card .ico { font-family: 'Noto Color Emoji', sans-serif; font-size: 120px; line-height: 1; }
+  .card .tt { font-size: 66px; font-weight: 900; letter-spacing: -0.02em; line-height: 1.1; }
+  .card .dd { font-size: 38px; font-weight: 500; color: #3a4453; margin-top: 6px; }
+
+  #weave { position: absolute; left: 90px; top: 640px; width: 340px; height: 340px; border-radius: 50%; border: 6px solid #ff6a00; overflow: hidden; opacity: 0;
+    background: repeating-linear-gradient(45deg, #d9d2b8 0 14px, #b8b09a 14px 28px); }
+  #weave::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(-45deg, rgba(255,255,255,.35) 0 14px, rgba(0,0,0,.18) 14px 28px); }
+  #weavelbl { position: absolute; left: 90px; top: 1000px; width: 340px; text-align: center; font-size: 36px; font-weight: 700; color: #ff6a00; opacity: 0; }
+  #weaveline { position: absolute; left: 420px; top: 880px; width: 200px; height: 6px; background: #ff6a00; transform-origin: 0 50%; transform: rotate(28deg); opacity: 0; }
+  #progress { position: absolute; left: 0; bottom: 0; height: 10px; background: #0f1a2e; width: 0; opacity: .9; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <svg id="noise" xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .5 0"/></filter><rect width="100%" height="100%" filter="url(#n)"/></svg>
+
+  <!-- shared track layer -->
+  <div id="track">
+    <div id="horizonglow"></div>
+    <div id="curb"></div>
+    <div id="ground"></div>
+    <div class="lane" style="top:1420px"></div>
+    <div class="lane" style="top:1640px"></div>
+    <div id="skid"></div>
+  </div>
+
+  <!-- S1 hook -->
+  <div class="scene" id="s1">
+    <div class="pill" id="s1pill" style="top:520px">FRP 카울, 30초 설명</div>
+    <div class="t h1 stroke" id="s1a" style="top:640px">서킷 라이더들은 왜</div>
+    <div class="t h1 stroke yellow" id="s1b" style="top:770px">순정 카울을<br>떼어낼까?</div>
+    <div class="fairing" id="s1f" style="left:260px; top:1120px"></div>
+  </div>
+
+  <!-- S2+S3 crash -->
+  <div class="scene" id="s2">
+    <div class="pill" id="s2pill" style="top:280px">순정 카울 = ABS 플라스틱</div>
+    <div class="pill red" id="s3pill" style="top:280px; border-color:#d81e24; background:rgba(255,255,255,.85)">문제는 뒤에 오는 라이더</div>
+    <div class="t h2 stroke" id="s2a" style="top:420px">넘어지는 순간,<br><span class="red">산산조각</span></div>
+    <div class="t h2 stroke" id="s2b" style="top:420px">날카로운 파편이<br><span class="red">트랙 위로</span></div>
+    <div class="t h2 stroke" id="s3a" style="top:420px">파편 = <span class="red">펑크 · 슬립 · 전도</span></div>
+    <div class="t h2 stroke" id="s3b" style="top:420px">세션 전체가<br><span class="red">적기로 중단</span></div>
+    <div class="fairing" id="s2f" style="left:260px; top:520px"></div>
+    <div id="shards" class="abs" style="left:260px; top:886px; width:560px; height:364px"></div>
+    <div class="emoji" id="rider" style="font-size:230px; left:-320px; top:1290px">🏍️</div>
+    <div class="emoji" id="warn" style="font-size:150px; left:0; top:0">⚠️</div>
+    <div class="emoji" id="flag" style="font-size:300px; left:390px; top:820px">🚩</div>
+  </div>
+
+  <!-- S4 FRP -->
+  <div class="scene" id="s4">
+    <div class="pill solid" id="s4pill" style="top:280px">그래서 FRP 카울</div>
+    <div class="t sub" id="s4sub" style="top:372px">유리섬유(Fiberglass) + 수지</div>
+    <div class="t h2 stroke" id="s4a" style="top:470px">깨져서 튀지 않고,<br><span class="yellow">갈려 나갑니다</span></div>
+    <div class="t h2 stroke" id="s4b" style="top:470px">섬유가 서로 붙잡아<br><span class="yellow">한 덩어리로</span></div>
+    <div class="fairing" id="s4f" style="left:-700px; top:886px"></div>
+    <div id="sparks" class="abs" style="left:0;top:0"></div>
+    <div id="dusts" class="abs" style="left:0;top:0"></div>
+    <div id="weave"></div>
+    <div id="weaveline"></div>
+    <div id="weavelbl">유리섬유 직조</div>
+  </div>
+
+  <!-- S5 bonus -->
+  <div class="scene" id="s5">
+    <div class="pill" id="s5pill" style="top:330px">게다가</div>
+    <div class="card" id="c1" style="top:470px"><div class="ico">🪶</div><div><div class="tt">가볍다</div><div class="dd">순정보다 가벼워 서킷 세팅에 유리</div></div></div>
+    <div class="card" id="c2" style="top:760px"><div class="ico">🔧</div><div><div class="tt">갈려도 수리 가능</div><div class="dd">레진·퍼티로 메우고 다시 탄다</div></div></div>
+    <div class="card" id="c3" style="top:1050px"><div class="ico">🏠</div><div><div class="tt">순정은 집에</div><div class="dd">비싼 순정 카울은 그대로 보존</div></div></div>
+  </div>
+
+  <!-- S6 CTA -->
+  <div class="scene" id="s6">
+    <div class="t h1 stroke" id="s6a" style="top:520px">서킷에선<br><span class="yellow">FRP 카울</span></div>
+    <div class="t sub" id="s6b" style="top:820px; font-size:52px">나를 위해, 그리고<br>뒤에 오는 라이더를 위해</div>
+    <div class="fairing" id="s6f" style="left:260px; top:1040px"></div>
+    <div class="pill solid" id="s6pill" style="top:1460px">❤️ 저장하고 라이딩 친구에게 공유</div>
+  </div>
+
+  <div id="flash"></div>
+  <div id="progress"></div>
+</div>
+
+<script>
+// ---------- helpers ----------
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, u) => a + (b - a) * u;
+const E = {
+  lin: u => u,
+  out: u => 1 - Math.pow(1 - u, 3),
+  in: u => u * u * u,
+  inout: u => u < .5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2,
+  back: u => { const c = 1.70158; return 1 + (c + 1) * Math.pow(u - 1, 3) + c * Math.pow(u - 1, 2); },
+};
+const tw = (t, t0, t1, a, b, e = E.out) => lerp(a, b, e(clamp((t - t0) / (t1 - t0), 0, 1)));
+function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+const $ = id => document.getElementById(id);
+const setO = (el, o) => el.style.opacity = clamp(o, 0, 1);
+
+// pop-in: fade + rise + slight overshoot; optional hold-out
+function pop(el, t, t0, tOut = Infinity, dur = .38) {
+  let o = tw(t, t0, t0 + dur, 0, 1, E.out);
+  let y = tw(t, t0, t0 + dur, 44, 0, E.back);
+  let s = tw(t, t0, t0 + dur, .92, 1, E.back);
+  if (t >= tOut) { o *= tw(t, tOut, tOut + .25, 1, 0, E.in); y = tw(t, tOut, tOut + .25, 0, -30, E.in); }
+  setO(el, o);
+  el.style.transform = `translate(${el.classList.contains('pill') ? '-50%' : '0'}, ${y}px) scale(${s})`;
+}
+function sceneVis(el, t, t0, t1, f = .3) {
+  const o = t < t0 || t > t1 + f ? 0 : Math.min(tw(t, t0, t0 + f, 0, 1, E.lin), tw(t, t1, t1 + f, 1, 0, E.lin));
+  setO(el, o);
+  el.style.display = o <= 0 ? 'none' : 'block';
+}
+
+// ---------- fairing SVG ----------
+function fairingSVG(kind) {
+  const body = kind === 'frp' ? '#e9e4d3' : '#e0262c';
+  const body2 = kind === 'frp' ? '#cfc8b0' : '#8e1016';
+  const stripe = kind === 'frp' ? '#ffd60a' : '#ffffff';
+  const gloss = kind === 'frp' ? 'rgba(255,255,255,.35)' : 'rgba(255,255,255,.55)';
+  return `<svg viewBox="0 0 400 260" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="g${kind}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${body}"/><stop offset="1" stop-color="${body2}"/></linearGradient></defs>
+    <path d="M 20 130 C 40 40, 200 20, 380 60 L 390 90 C 340 120, 330 200, 250 240 L 60 232 C 20 212, 10 170, 20 130 Z" fill="url(#g${kind})" stroke="rgba(0,0,0,.45)" stroke-width="4"/>
+    <path d="M 70 140 C 90 90, 200 70, 330 92 L 322 110 C 250 120, 200 170, 160 215 L 90 210 C 60 190, 55 165, 70 140 Z" fill="rgba(0,0,0,.28)"/>
+    <path d="M 40 110 C 120 60, 260 45, 370 70" fill="none" stroke="${stripe}" stroke-width="12" stroke-linecap="round"/>
+    <path d="M 60 80 C 140 40, 230 35, 330 52" fill="none" stroke="${gloss}" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="60" cy="145" r="12" fill="#111" stroke="#666" stroke-width="3"/>
+    <circle cx="330" cy="95" r="9" fill="#111" stroke="#666" stroke-width="3"/>
+  </svg>`;
+}
+['s1f', 's2f', 's6f'].forEach(id => $(id).innerHTML = fairingSVG('abs'));
+$('s4f').innerHTML = fairingSVG('frp');
+$('s6f').innerHTML = fairingSVG('frp');
+
+// ---------- shards (jittered 4x3 grid) ----------
+const SH = [];
+(function buildShards() {
+  const r = rng(7);
+  const C = 4, R = 3;
+  const P = [];
+  for (let j = 0; j <= R; j++) { P[j] = []; for (let i = 0; i <= C; i++) {
+    const inner = i > 0 && i < C && j > 0 && j < R;
+    P[j][i] = [i / C * 100 + (inner ? (r() - .5) * 22 : 0), j / R * 100 + (inner ? (r() - .5) * 22 : 0)];
+  } }
+  const host = $('shards');
+  for (let j = 0; j < R; j++) for (let i = 0; i < C; i++) {
+    const q = [P[j][i], P[j][i + 1], P[j + 1][i + 1], P[j + 1][i]];
+    const el = document.createElement('div');
+    el.className = 'shard';
+    el.innerHTML = fairingSVG('abs');
+    el.style.clipPath = `polygon(${q.map(p => p[0] + '% ' + p[1] + '%').join(',')})`;
+    const cx = q.reduce((s, p) => s + p[0], 0) / 4 * 5.6, cy = q.reduce((s, p) => s + p[1], 0) / 4 * 3.64; // px within box
+    el.style.transformOrigin = `${cx}px ${cy}px`;
+    host.appendChild(el);
+    // impact point (box coords): bottom centre
+    const ang = Math.atan2(cy - 364, cx - 280) + (r() - .5) * 1.1;
+    const spd = 450 + r() * 900;
+    SH.push({ el, cx, cy, vx: Math.cos(ang) * spd * 1.1, vy: Math.sin(ang) * spd * 0.7 - 150 - r() * 350, w: (r() - .5) * 1400, land: 1250 + 40 + r() * 320 - (886 + cy) });
+  }
+})();
+const G = 3200, T_IMPACT = 5.3;
+function shardsAt(t) {
+  const dt = t - T_IMPACT;
+  for (const s of SH) {
+    if (dt < 0) { s.el.style.display = 'none'; continue; }
+    s.el.style.display = 'block';
+    // landing time solve: y = vy*dt + .5 G dt^2 = land
+    const disc = s.vy * s.vy + 2 * G * s.land;
+    const tl = (-s.vy + Math.sqrt(Math.max(0, disc))) / G;
+    const d = Math.min(dt, tl);
+    const x = s.vx * d, y = s.vy * d + .5 * G * d * d, rot = s.w * d * (d < tl ? 1 : 1);
+    s.el.style.transform = `translate(${x}px, ${y}px) rotate(${rot}deg)`;
+  }
+}
+
+// ---------- sparks & dust ----------
+const SP = [], DU = [];
+(function build() {
+  const r = rng(99);
+  for (let i = 0; i < 46; i++) { const el = document.createElement('div'); el.className = 'spark'; $('sparks').appendChild(el); SP.push({ el, ph: r(), vx: -(300 + r() * 900), vy: -(200 + r() * 700), life: .25 + r() * .3, sz: 5 + r() * 9 }); }
+  for (let i = 0; i < 8; i++) { const el = document.createElement('div'); el.className = 'dust'; $('dusts').appendChild(el); DU.push({ el, ph: r(), life: .7 + r() * .5, ox: r() * 200 }); }
+})();
+
+// ---------- timeline ----------
+const TL = { s1: [0, 3.3], s2: [3.5, 15.3], s4: [15.5, 22.3], s5: [22.5, 26.8], s6: [27, 30] };
+
+function seek(t) {
+  // stage shake at impact
+  let sx = 0, sy = 0;
+  if (t > T_IMPACT && t < T_IMPACT + .5) { const r = rng(Math.floor(t * 60)); const a = tw(t, T_IMPACT, T_IMPACT + .5, 26, 0, E.out); sx = (r() - .5) * a; sy = (r() - .5) * a; }
+  $('stage').style.transform = `translate(${sx}px, ${sy}px)`;
+  setO($('flash'), t > T_IMPACT && t < T_IMPACT + .35 ? tw(t, T_IMPACT, T_IMPACT + .35, .9, 0, E.out) : 0);
+  $('progress').style.width = (t / 30 * 1080) + 'px';
+
+  // track visible for crash + FRP scenes
+  const trackOn = Math.min(tw(t, 3.4, 3.9, 0, 1, E.lin), tw(t, 22.2, 22.6, 1, 0, E.lin));
+  setO($('track'), trackOn); $('track').style.display = trackOn > 0 ? 'block' : 'none';
+
+  // ----- S1
+  sceneVis($('s1'), t, TL.s1[0], TL.s1[1], .3);
+  if (t <= TL.s1[1] + .3) {
+    pop($('s1pill'), t, .1);
+    pop($('s1a'), t, .35);
+    pop($('s1b'), t, .75);
+    setO($('s1f'), tw(t, 1.1, 1.5, 0, 1));
+    const wob = Math.sin(t * 6) * 3;
+    $('s1f').style.transform = `translateY(${tw(t, 1.1, 1.6, 60, 0, E.back)}px) rotate(${wob - 6}deg) scale(${tw(t, 1.1, 1.6, .8, 1, E.back)})`;
+  }
+
+  // ----- S2/S3 crash
+  sceneVis($('s2'), t, TL.s2[0], TL.s2[1], .3);
+  if (t >= TL.s2[0] - .1 && t <= TL.s2[1] + .4) {
+    pop($('s2pill'), t, 3.6, 9.4);
+    pop($('s3pill'), t, 9.6);
+    pop($('s2a'), t, 5.35, 7.1);
+    pop($('s2b'), t, 7.3, 9.4);
+    pop($('s3a'), t, 11.7, 13.2);
+    pop($('s3b'), t, 13.4);
+    // intact fairing falls 4.6 -> 5.3
+    const f = $('s2f');
+    if (t < T_IMPACT) {
+      setO(f, tw(t, 3.8, 4.2, 0, 1));
+      const y = tw(t, 4.55, T_IMPACT, 0, 366, E.in);
+      const rot = tw(t, 4.55, T_IMPACT, -6, 9, E.in);
+      f.style.transform = `translateY(${y + Math.sin(t * 5) * 4}px) rotate(${rot}deg)`;
+    } else setO(f, 0);
+    shardsAt(t);
+    // rider
+    const rd = $('rider');
+    const rx = tw(t, 9.9, 12.6, -320, 1150, E.lin);
+    const hit = t > 11.4 && t < 12.3;
+    const jit = hit ? Math.sin(t * 60) * 9 : 0;
+    setO(rd, tw(t, 9.9, 10.2, 0, 1));
+    rd.style.transform = `translate(${rx}px, ${hit ? Math.sin(t * 45) * 10 : 0}px) rotate(${jit}deg)`;
+    const w = $('warn');
+    setO(w, t > 11.45 ? Math.min(tw(t, 11.45, 11.7, 0, 1, E.out), tw(t, 12.4, 12.7, 1, 0)) : 0);
+    w.style.transform = `translate(${rx + 40}px, ${1130 + Math.sin(t * 30) * 6}px) scale(${tw(t, 11.45, 11.75, .4, 1, E.back)})`;
+    const fl = $('flag');
+    pop(fl, t, 13.3);
+    if (t > 13.3) fl.style.transform += ` rotate(${Math.sin(t * 8) * 6}deg)`;
+  }
+
+  // ----- S4 FRP
+  sceneVis($('s4'), t, TL.s4[0], TL.s4[1], .3);
+  if (t >= TL.s4[0] - .1 && t <= TL.s4[1] + .4) {
+    pop($('s4pill'), t, 15.6);
+    pop($('s4sub'), t, 15.95);
+    pop($('s4a'), t, 17.0, 19.5);
+    pop($('s4b'), t, 19.7);
+    const f = $('s4f');
+    const x = tw(t, 16.3, 20.6, -700, 560, E.out);
+    const moving = t > 16.3 && t < 20.4;
+    const er = tw(t, 16.5, 20.4, 0, 19, E.out); // erosion % from bottom
+    setO(f, 1);
+    f.style.transform = `translate(${x + 700}px, ${er / 100 * 364 + (moving ? Math.sin(t * 40) * 3 : 0)}px) rotate(${moving ? -3 + Math.sin(t * 17) * 1.5 : -3}deg)`;
+    // jagged bottom edge rising with erosion
+    const r = rng(3); const pts = ['0% 0%', '100% 0%'];
+    for (let i = 10; i >= 0; i--) pts.push(`${i * 10}% ${100 - er - (i > 0 && i < 10 ? r() * 4 : 0)}%`);
+    f.style.clipPath = `polygon(${pts.join(',')})`;
+    // contact point (stage coords)
+    const cxp = x + 700 + 90, cyp = 1250;
+    const sparkOn = moving && t > 16.5;
+    for (const s of SP) {
+      const lt = ((t * 1.0 + s.ph * s.life) % s.life);
+      const on = sparkOn && lt < s.life;
+      setO(s.el, on ? (1 - lt / s.life) : 0);
+      if (on) { const px = cxp + 160 * s.ph + s.vx * lt, py = cyp + s.vy * lt + .5 * 2600 * lt * lt; const vyn = s.vy + 2600 * lt; const ang = Math.atan2(vyn, s.vx) * 180 / Math.PI; s.el.style.transform = `translate(${px}px, ${py}px) rotate(${ang}deg) scale(${s.sz / 10})`; }
+    }
+    for (const d of DU) {
+      const lt = ((t + d.ph * d.life) % d.life);
+      const on = sparkOn && lt < d.life;
+      setO(d.el, on ? 1.0 * (1 - lt / d.life) : 0);
+      if (on) d.el.style.transform = `translate(${cxp + d.ox - 240 * lt - 60}px, ${cyp - 60 - 120 * lt}px) scale(${.6 + 1.6 * lt / d.life})`;
+    }
+    const sk = $('skid'); sk.style.left = '0px'; sk.style.width = Math.max(0, cxp + 120) + 'px'; setO(sk, t > 16.5 ? .9 : 0);
+    // weave inset
+    const wv = Math.min(tw(t, 19.9, 20.3, 0, 1), tw(t, 22.2, 22.5, 1, 0));
+    setO($('weave'), wv); setO($('weavelbl'), wv); setO($('weaveline'), wv);
+    $('weave').style.transform = `scale(${tw(t, 19.9, 20.3, .6, 1, E.back)})`;
+  } else setO($('skid'), 0);
+
+  // ----- S5 bonus
+  sceneVis($('s5'), t, TL.s5[0], TL.s5[1], .3);
+  if (t >= TL.s5[0] - .1 && t <= TL.s5[1] + .4) {
+    pop($('s5pill'), t, 22.6);
+    pop($('c1'), t, 22.95);
+    pop($('c2'), t, 23.95);
+    pop($('c3'), t, 24.95);
+  }
+
+  // ----- S6 CTA
+  sceneVis($('s6'), t, TL.s6[0], TL.s6[1], .3);
+  if (t >= TL.s6[0] - .1) {
+    pop($('s6a'), t, 27.1);
+    pop($('s6b'), t, 27.6);
+    setO($('s6f'), tw(t, 27.5, 27.9, 0, 1));
+    $('s6f').style.transform = `translateY(${tw(t, 27.5, 28.0, 60, 0, E.back)}px) rotate(${-4 + Math.sin(t * 4) * 2}deg) scale(${tw(t, 27.5, 28.0, .8, 1, E.back)})`;
+    pop($('s6pill'), t, 28.5);
+    if (t > 28.5) $('s6pill').style.transform += ` scale(${1 + Math.sin(t * 9) * .02})`;
+  }
+}
+window.seek = seek;
+seek(0);
+</script>
+</body>
+</html>
