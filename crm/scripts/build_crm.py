@@ -225,7 +225,7 @@ def survey_snapshots() -> list[dict]:
     return rows
 
 
-RCA_HEAVY_MIN = 3   # R1 헤비 기준 수강 횟수 (문서의 267명은 다른 기준/시점일 수 있어 조정 가능)
+RCA_HEAVY_MIN = 4   # R1 헤비 = 4회 이상 (최종세분화명단의 정의와 일치)
 
 
 def load_rca() -> pd.DataFrame | None:
@@ -316,12 +316,18 @@ def time_pref(hour: float) -> str | None:
 
 def load_payments() -> pd.DataFrame | None:
     """결제내역_<날짜>_전체.xlsx 의 '결제상세' 시트. 여러 파일이면 합치고 (결제일, 고객명, 예약일, 차종)로 중복 제거."""
-    files = sorted(RAW_DIR.glob("결제내역_*_전체.xlsx"))
+    files = sorted(RAW_DIR.glob("결제내역_*.xlsx"))
     if not files:
         return None
-    frames = [pd.read_excel(f, sheet_name="결제상세", dtype=str) for f in files]
+    frames = []
+    for f in files:
+        d = pd.read_excel(f, sheet_name="결제상세", dtype=str)
+        d.columns = [c.strip() for c in d.columns]
+        if "이메일" not in d.columns:      # 07-24 지점별 구버전(연락처 없음)은 전체 파일에 포함되므로 건너뜀
+            continue
+        frames.append(d)
     P = pd.concat(frames, ignore_index=True)
-    P.columns = [c.strip() for c in P.columns]
+    P["결제일"] = P["결제일"].str.strip()
     P = P.drop_duplicates(["결제일", "고객명", "예약일", "차종"])
     P["결제일시"] = pd.to_datetime(P["결제일"], format="%Y.%m.%d %H:%M", errors="coerce")
     P["예약시작"] = pd.to_datetime(P["예약일"] + " " + P["예약시작시간"], format="%Y.%m.%d %H:%M", errors="coerce")
@@ -383,6 +389,19 @@ def customer_aggregates(P: pd.DataFrame, cutoff: pd.Timestamp) -> pd.DataFrame:
     return A.reset_index()
 
 
+def merge_by_key(df: pd.DataFrame, A: pd.DataFrame | None, cols: list[str], key: str = "고객키") -> pd.DataFrame:
+    """고객키(연락처 → 이메일) 또는 지정 키로 집계 테이블을 마스터에 붙인다."""
+    if A is None:
+        for c in cols:
+            df[c] = pd.NA
+        return df
+    if key == "고객키":
+        idx = A.set_index("고객키")
+        k = df["연락처_정규화"].where(df["연락처_정규화"].isin(idx.index), df["이메일_소문자"])
+        return df.join(idx[cols], on=k.rename("_k")).drop(columns=["_k"], errors="ignore")
+    return df.merge(A[[key] + cols], on=key, how="left")
+
+
 def merge_payments(df: pd.DataFrame, A: pd.DataFrame | None) -> pd.DataFrame:
     cols = [c for c in A.columns if c != "고객키"] if A is not None else []
     if A is None:
@@ -433,6 +452,308 @@ def payment_summary(P: pd.DataFrame | None, A: pd.DataFrame | None, df: pd.DataF
         "paying_rca": int(paying["RCA회원"].sum()),
         "members_not_paying": int((~df["결제회원"] & ~df["마케팅제외"]).sum()),
     }
+
+
+# ---------------------------------------------------------------------------
+# 웹 방문·캠페인 유입 리포트
+# ---------------------------------------------------------------------------
+def load_web_analytics() -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
+    """웹분석_<시작>_<끝>.xlsx: '기본 데이터'(월별 방문자/PV/예약시작/문의)와 '캠페인 유입'.
+    같은 월이 여러 파일에 있으면 종료일이 가장 늦은 파일의 값을 쓴다(더 완전한 집계)."""
+    files = sorted(RAW_DIR.glob("웹분석_*.xlsx"))
+    if not files:
+        return None, None
+    basics, camps = [], []
+    for f in files:
+        m = re.findall(r"(\d{4}-\d{2}-\d{2})", f.name)
+        end = m[-1] if m else f.name
+        b = pd.read_excel(f, sheet_name="기본 데이터", dtype=str)
+        b["월"] = b["년/월"].str.extract(r"(\d{4})년\s*(\d{1,2})월").apply(lambda r: f"{r[0]}-{int(r[1]):02d}", axis=1)
+        b["_end"] = end
+        basics.append(b)
+        c = pd.read_excel(f, sheet_name="캠페인 유입", dtype=str).rename(columns={"년/월": "월"})
+        c["_end"] = end
+        camps.append(c)
+    # 같은 월이 여러 내보내기에 있으면 방문자 합이 가장 큰(=그 월을 온전히 담은) 내보내기를 채택
+    B = pd.concat(basics, ignore_index=True)
+    for c in ["방문자수", "페이지뷰(PV)", "예약시작", "문의제출"]:
+        B[c] = pd.to_numeric(B[c], errors="coerce").fillna(0).astype(int)
+    B = B.sort_values(["월", "방문자수"]).drop_duplicates("월", keep="last")
+    B = B.sort_values("월")[["월", "방문자수", "페이지뷰(PV)", "예약시작", "문의제출"]]
+
+    C = pd.concat(camps, ignore_index=True)
+    for c in ["방문자수", "세션", "예약시작", "예약확정", "결제금액", "취소건수", "환불금액"]:
+        C[c] = pd.to_numeric(C[c], errors="coerce").fillna(0).astype(int)
+    tot = C.groupby(["월", "_end"])["방문자수"].sum().reset_index()
+    best = tot.sort_values(["월", "방문자수"]).drop_duplicates("월", keep="last").set_index("월")["_end"]
+    C = C[C["_end"] == C["월"].map(best)].copy()
+    C["순결제"] = C["결제금액"] - C["환불금액"]
+    C["확정율%"] = (C["예약확정"] / C["방문자수"].replace(0, pd.NA) * 100).astype(float).round(1)
+    C["방문자당매출"] = (C["순결제"] / C["방문자수"].replace(0, pd.NA)).astype(float).round(0)
+    C = C.sort_values(["월", "순결제"], ascending=[False, False])[
+        ["월", "소스", "매체", "캠페인", "콘텐츠", "방문자수", "세션", "예약시작", "예약확정", "결제금액", "취소건수", "환불금액", "순결제", "확정율%", "방문자당매출"]]
+    return B, C
+
+
+def web_summary(B: pd.DataFrame | None, C: pd.DataFrame | None) -> dict | None:
+    if B is None:
+        return None
+    by_medium = C.groupby(["소스", "매체"]).agg(방문자=("방문자수", "sum"), 예약시작=("예약시작", "sum"), 예약확정=("예약확정", "sum"),
+                                              순결제=("순결제", "sum")).reset_index()
+    by_medium["확정율%"] = (by_medium["예약확정"] / by_medium["방문자"].replace(0, pd.NA) * 100).astype(float).round(1)
+    by_medium = by_medium.sort_values("순결제", ascending=False)
+    by_camp = C[C["캠페인"].ne("-")].groupby("캠페인").agg(월=("월", lambda x: ",".join(sorted(set(x)))), 방문자=("방문자수", "sum"),
+                                                     예약시작=("예약시작", "sum"), 예약확정=("예약확정", "sum"), 순결제=("순결제", "sum")).reset_index()
+    by_camp["확정율%"] = (by_camp["예약확정"] / by_camp["방문자"].replace(0, pd.NA) * 100).astype(float).round(1)
+    by_camp = by_camp.sort_values("순결제", ascending=False)
+    return {
+        "monthly": B.to_dict(orient="records"),
+        "by_medium": by_medium.to_dict(orient="records"),
+        "by_campaign": by_camp.to_dict(orient="records"),
+        "campaign_rows": int(len(C)),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 세분화_기준표적용.xlsx (고객마스터 660 + 예약이력 3월~) → 결제상세 이전 기간 보강
+# ---------------------------------------------------------------------------
+GENRE_ALIAS = {"레플리카": "슈퍼스포츠", "스포츠투어러": "투어러", "스쿠터": "커브", "헤리티지": "클래식", "모던클래식": "클래식"}
+
+
+def load_reservation_history() -> pd.DataFrame | None:
+    files = sorted(RAW_DIR.glob("세분화_기준표적용_*.xlsx"))
+    if not files:
+        return None
+    f = files[-1]
+    M = pd.read_excel(f, sheet_name="고객마스터", dtype=str)
+    H = pd.read_excel(f, sheet_name="예약이력", dtype=str)
+    M["연락처_정규화"] = M["연락처"].map(normalize_phone)
+    M["이메일_소문자"] = M["이메일"].str.strip().str.lower()
+    idmap = M.set_index("고객ID")[["연락처_정규화", "이메일_소문자"]]
+    H = H.join(idmap, on="고객ID")
+    H["접수"] = pd.to_datetime(H["접수일"], errors="coerce")
+    H["예약시작"] = pd.to_datetime(H["이용시작일"].str.replace(r"\.(\d)(?=\.|$)", r".0\1", regex=True), format="%Y.%m.%d", errors="coerce")
+    H["순결제"] = pd.to_numeric(H["이용금액"], errors="coerce").fillna(0)
+    H["취소"] = H["예약상태"].ne("이용완료")
+    H["모델"] = H["기종"].str.strip()
+    H["장르"] = H["모델"].map(lambda m: MODEL_INFO.get(m, (None, None))[0]).fillna(H["장르"].map(lambda g: GENRE_ALIAS.get(g, g)))
+    H["배기량대"] = H["모델"].map(lambda m: MODEL_INFO.get(m, (None, "미상"))[1])
+    H["예약 지점"] = H["지점"].map({"용산": "Yongsan", "인천": "Incheon", "분당": "Bundang", "대구": "Daegu", "제주": "Jeju"}).fillna(H["지점"])
+    H["브랜드"] = pd.NA
+    H["출처"] = "예약이력"
+    return H[["접수", "예약시작", "순결제", "취소", "모델", "장르", "배기량대", "예약 지점", "브랜드", "연락처_정규화", "이메일_소문자", "출처"]]
+
+
+def unify_history(P: pd.DataFrame | None, H: pd.DataFrame | None) -> pd.DataFrame | None:
+    """결제상세(P)가 시작되기 전 기간은 예약이력(H)로 보강해 3월부터의 이용 이벤트를 만든다."""
+    if P is None and H is None:
+        return None
+    parts = []
+    if P is not None:
+        Pp = P.rename(columns={"결제일시": "접수"})[["접수", "예약시작", "순결제", "취소", "모델", "장르", "배기량대", "예약 지점", "브랜드", "연락처_정규화", "이메일_소문자"]].copy()
+        Pp["출처"] = "결제상세"
+        parts.append(Pp)
+        p_start = P["결제일시"].min()
+        if H is not None:
+            parts.append(H[H["접수"] < p_start])
+    else:
+        parts.append(H)
+    E = pd.concat(parts, ignore_index=True)
+    E["고객키"] = E["연락처_정규화"].fillna(E["이메일_소문자"])
+    return E[E["고객키"].notna()]
+
+
+def history_aggregates(E: pd.DataFrame, cutoff: pd.Timestamp) -> pd.DataFrame:
+    V = E[~E["취소"]]
+    g = V.groupby("고객키")
+    A = pd.DataFrame({
+        "이력_이용횟수": g.size(),
+        "이력_이용금액": g["순결제"].sum().round(0),
+        "이력_첫이용일": g["예약시작"].min().dt.date,
+        "이력_최근이용일": g["예약시작"].max().dt.date,
+        "이력_이용지점수": g["예약 지점"].nunique(),
+        "이력_최대배기량": g["배기량대"].agg(lambda x: max((c for c in x if c in CC_ORDER), key=CC_ORDER.index, default=None)),
+        "이력_이용장르": g["장르"].agg(lambda x: ",".join(sorted(set(x.dropna())))),
+    })
+    A["이력_취소횟수"] = E[E["취소"]].groupby("고객키").size().reindex(A.index).fillna(0).astype(int)
+    A["이력_최근성_일"] = (cutoff - pd.to_datetime(A["이력_최근이용일"])).dt.days
+
+    def stage(r):
+        if r["이력_최근성_일"] <= 30:
+            return "활성"
+        if r["이력_이용횟수"] >= 2 and r["이력_최근성_일"] <= 90:
+            return "이탈위험"
+        return "휴면"
+    A["생애단계"] = A.apply(stage, axis=1)
+    return A.reset_index()
+
+
+def load_suppression() -> set[str]:
+    """최종세분화명단_*.xlsx 의 수신거부_차단기록 시트 → 연락처 집합."""
+    out = set()
+    for f in sorted(RAW_DIR.glob("최종세분화명단_*.xlsx")):
+        try:
+            d = pd.read_excel(f, sheet_name="수신거부_차단기록", dtype=str)
+        except ValueError:
+            continue
+        out |= set(d["연락처"].map(normalize_phone).dropna())
+    return out
+
+
+def load_prior_vip() -> pd.DataFrame | None:
+    """최종세분화명단의 VIP 표기와 세그먼트를 가져온다(기존 작업 보존용)."""
+    files = sorted(RAW_DIR.glob("최종세분화명단_*.xlsx"))
+    if not files:
+        return None
+    d = pd.read_excel(files[-1], sheet_name="아르테파인_명단", dtype=str)
+    d["연락처_정규화"] = d["연락처"].map(normalize_phone)
+    d = d.dropna(subset=["연락처_정규화"]).drop_duplicates("연락처_정규화")
+    return d.rename(columns={"VIP": "기존VIP", "세그먼트": "기존세그먼트"})[["연락처_정규화", "기존VIP", "기존세그먼트"]]
+
+
+# ---------------------------------------------------------------------------
+# 발송 이력 (문자 캠페인) + 명단 전수 대조 전환
+# ---------------------------------------------------------------------------
+def load_send_log() -> pd.DataFrame | None:
+    rows = []
+    # (a) 세분화_기준표적용 발송이력 시트 (07-25 T1~T3A)
+    for f in sorted(RAW_DIR.glob("세분화_기준표적용_*.xlsx")):
+        S = pd.read_excel(f, sheet_name="발송이력", dtype=str)
+        M = pd.read_excel(f, sheet_name="고객마스터", dtype=str)
+        S = S.join(M.set_index("고객ID")[["연락처"]], on="고객ID")
+        cp2promo = {"CP016": "20260724_promo", "CP017": "20260724_promo", "CP018": "20260724_promo",
+                    "CP013": "202607_promo", "CP014": "202607_promo", "CP015": "202607_promo"}
+        for _, r in S.iterrows():
+            rows.append({"발송일": pd.to_datetime(r["발송일"]), "캠페인": cp2promo.get(r["캠페인ID"], r["캠페인ID"]),
+                         "캠페인명": r["캠페인명(자동)"], "채널": r["채널"],
+                         "연락처_정규화": normalize_phone(r["연락처"]), "타겟": r["캠페인명(자동)"][:3].strip()})
+    # (b) 발송명단_<날짜>_*.xlsx: 시트마다 명단 (이름/연락처/…)
+    meta = {"2026-07-25": ("20260724_promo", "토요발송 T1~T3A"), "2026-07-31": ("20260731_promo", "금요저녁 용산밤바리/인천오션라이딩"),
+            "2026-08-14": ("20260814_연휴", "연휴 심야 LMS 500명 (거래관계/수신동의/미응답)")}
+    for f in sorted(RAW_DIR.glob("발송명단_*.xlsx")):
+        m = re.search(r"(\d{4}-\d{2}-\d{2})", f.name)
+        day = m.group(1) if m else None
+        camp, cname = meta.get(day, (f.stem, f.stem))
+        xl = pd.ExcelFile(f)
+        for sh in xl.sheet_names:
+            if sh.startswith("발송요약") or sh.startswith(("①", "②", "④")):
+                continue
+            d = pd.read_excel(f, sheet_name=sh, dtype=str)
+            if "연락처" not in d.columns:      # 제목 행이 있는 레이아웃(연휴 명단 ③)
+                for h in range(1, 6):
+                    d = pd.read_excel(f, sheet_name=sh, dtype=str, header=h)
+                    if "연락처" in d.columns:
+                        break
+            if "연락처" not in d.columns:
+                continue
+            tgt_col = "발송근거" if "발송근거" in d.columns else None
+            for _, r in d.iterrows():
+                rows.append({"발송일": pd.to_datetime(day), "캠페인": camp, "캠페인명": cname, "채널": "SMS",
+                             "연락처_정규화": normalize_phone(r["연락처"]), "타겟": (r[tgt_col] if tgt_col else sh)})
+    if not rows:
+        return None
+    L = pd.DataFrame(rows).dropna(subset=["연락처_정규화"])
+    # 같은 날 같은 사람에게 같은 캠페인이 발송이력 시트와 발송명단 파일 양쪽에 있으면 한 건으로
+    L = L.drop_duplicates(["발송일", "연락처_정규화"], keep="first")
+    return L
+
+
+def attach_conversions(L: pd.DataFrame, E: pd.DataFrame | None, window_days: int = 14) -> pd.DataFrame:
+    """발송 후 window_days 안에 유효 결제(예약이력/결제상세 기준)가 있으면 전환으로 본다(명단 전수 대조 방식)."""
+    L = L.copy()
+    L["전환"] = False
+    L["전환금액"] = 0.0
+    L["전환예약일"] = pd.NaT
+    L["발송시_이용횟수"] = 0
+    L["발송시_최근성_일"] = pd.NA
+    L["발송시_생애단계"] = "미이용"
+    if E is None:
+        return L
+    V = E[~E["취소"] & E["연락처_정규화"].notna()]
+    byp = {k: g.sort_values("접수") for k, g in V.groupby("연락처_정규화")}
+    for i, r in L.iterrows():
+        g = byp.get(r["연락처_정규화"])
+        if g is None:
+            continue
+        before = g[g["접수"] < r["발송일"]]
+        n_before = len(before)
+        L.at[i, "발송시_이용횟수"] = n_before
+        if n_before:
+            rec = (r["발송일"] - before["예약시작"].max()).days
+            L.at[i, "발송시_최근성_일"] = rec
+            L.at[i, "발송시_생애단계"] = "활성" if rec <= 30 else ("이탈위험" if (n_before >= 2 and rec <= 90) else "휴면")
+        w = g[(g["접수"] >= r["발송일"]) & (g["접수"] < r["발송일"] + pd.Timedelta(days=window_days))]
+        if len(w):
+            L.at[i, "전환"] = True
+            L.at[i, "전환금액"] = float(w["순결제"].sum())
+            L.at[i, "전환예약일"] = w["예약시작"].min()
+    return L
+
+
+def send_aggregates(L: pd.DataFrame) -> pd.DataFrame:
+    g = L.groupby("연락처_정규화")
+    A = pd.DataFrame({
+        "발송횟수": g.size(),
+        "최근발송일": g["발송일"].max().dt.date,
+        "발송캠페인": g["캠페인"].agg(lambda x: ",".join(sorted(set(x)))),
+        "발송후전환": g["전환"].any(),
+        "발송전환금액": g["전환금액"].sum(),
+    })
+    for ym, sub in L.groupby(L["발송일"].dt.strftime("%Y-%m")):
+        A[f"발송_{ym}"] = sub.groupby("연락처_정규화").size().reindex(A.index).fillna(0).astype(int)
+    return A.reset_index()
+
+
+# 개인 명단이 없는 대량 발송: 세분화 v2 캠페인마스터 메모 + 웹분석 캠페인 유입 기준 (방문/확정/순매출)
+MASS_CAMPAIGNS = [
+    {"발송일": "2026-07-11", "캠페인": "202607_promo", "캠페인명": "0711 상시 프로모 최대30% — 회원 문자(sms_01)", "타겟": "회원 전체(대량)", "발송": 3517, "전환자": 24, "전환매출": 1310000, "근거": "웹분석 확정 24·순매출 131만원 (캠페인마스터 메모)"},
+    {"발송일": "2026-07-11", "캠페인": "202607_promo", "캠페인명": "0711 상시 프로모 — RCA 교육생(raincho)", "타겟": "RCA 전체(대량)", "발송": 5005, "전환자": 3, "전환매출": 30000, "근거": "웹분석 확정 3·순매출 3만원. 수신자 40%가 미수강"},
+    {"발송일": "2026-07-11", "캠페인": "202607_promo", "캠페인명": "0711 상시 프로모 — 카카오 친구톡(kakao_01)", "타겟": "카카오 구독자(대량)", "발송": None, "전환자": 5, "전환매출": 330000, "근거": "웹분석 확정 5·순매출 33만원"},
+]
+
+
+def campaign_performance(L: pd.DataFrame) -> pd.DataFrame:
+    g = L.groupby(["발송일", "캠페인", "캠페인명", "타겟"])
+    C = pd.DataFrame({"발송": g.size(), "전환자": g["전환"].sum(), "전환매출": g["전환금액"].sum()}).reset_index()
+    C["발송일"] = C["발송일"].dt.strftime("%Y-%m-%d")
+    C["근거"] = "명단 전수 대조 (발송 후 14일 내 유효 결제)"
+    C = pd.concat([pd.DataFrame(MASS_CAMPAIGNS), C], ignore_index=True)
+    C["전환율%"] = (C["전환자"] / C["발송"] * 100).round(1)
+    return C.sort_values(["발송일", "타겟"])[["발송일", "캠페인", "캠페인명", "타겟", "발송", "전환자", "전환율%", "전환매출", "근거"]]
+
+
+def recipient_profile(df: pd.DataFrame, L: pd.DataFrame) -> tuple[dict, pd.DataFrame]:
+    """문자 수신자의 성격(생애단계·시간성향·주말성향·취향장르·지점·동의상태·설문 페르소나)을 캠페인/타겟별로 집계."""
+    rec = L.merge(df.drop_duplicates("연락처_정규화")[[
+        "연락처_정규화", "시간성향", "주말성향", "취향장르", "주지점", "마케팅상태", "이력_이용횟수", "이력_최대배기량",
+        "RCA회원", "VIP산정", "설문완료_bool", COL["q_buy"], COL["q_exp"], "가입월"]], on="연락처_정규화", how="left")
+    rec["매칭"] = rec["마케팅상태"].notna()
+    rec["생애단계"] = rec["발송시_생애단계"]
+    dims = ["생애단계", "시간성향", "주말성향", "취향장르", "주지점", "마케팅상태", "이력_최대배기량", COL["q_buy"]]
+    tables = []
+    for (camp, tgt), g in rec.groupby(["캠페인", "타겟"]):
+        n = len(g)
+        row = {"캠페인": camp, "타겟": tgt, "발송": n, "회원매칭": int(g["매칭"].sum()), "이력고객": int(g["이력_이용횟수"].fillna(0).gt(0).sum()),
+               "RCA회원": int(g["RCA회원"].fillna(False).sum()), "VIP": int(g["VIP산정"].fillna(False).sum()),
+               "설문완료": int(g["설문완료_bool"].fillna(False).sum()), "전환자": int(g["전환"].sum()), "전환율%": round(g["전환"].mean() * 100, 1)}
+        for dcol in dims:
+            vc = g[dcol].fillna("미상").value_counts()
+            row[dcol] = ", ".join(f"{k} {v}" for k, v in vc.head(6).items())
+        # 전환자 vs 비전환자의 특징 차이
+        conv = g[g["전환"]]
+        row["전환자_시간성향"] = ", ".join(f"{k} {v}" for k, v in conv["시간성향"].fillna("미상").value_counts().items())
+        row["전환자_생애단계"] = ", ".join(f"{k} {v}" for k, v in conv["생애단계"].fillna("미상").value_counts().items())
+        row["전환자_취향장르"] = ", ".join(f"{k} {v}" for k, v in conv["취향장르"].fillna("미상").value_counts().items())
+        tables.append(row)
+    T = pd.DataFrame(tables)
+    # 전체 수신자 기준 차원별 전환율
+    overall = {}
+    for dcol in ["생애단계", "시간성향", "주말성향", "취향장르", "주지점", "마케팅상태", "이력_최대배기량"]:
+        ct = rec.groupby(rec[dcol].fillna("미상"))["전환"].agg(["size", "sum"])
+        ct["전환율%"] = (ct["sum"] / ct["size"] * 100).round(1)
+        overall[dcol] = ct.rename(columns={"size": "발송", "sum": "전환자"}).sort_values("발송", ascending=False).head(8).to_dict(orient="index")
+    return {"by_target": T.to_dict(orient="records"), "by_dimension": overall,
+            "recipients_total": int(rec["연락처_정규화"].nunique()), "recipients_matched": int(rec[rec["매칭"]]["연락처_정규화"].nunique())}, T
 
 
 def load_extra_sources() -> dict[str, pd.DataFrame]:
@@ -517,16 +838,16 @@ PERSONA_DEFS = [
     ("P05_얼리버드", "문자 페르소나 ⑤ 얼리버드 아침형 (실측)",
      "결제 고객 중 시간성향 새벽·오전형(06~09시). 결제 없으면 설문 '새벽'",
      lambda d: _pay("시간성향")(d).eq("새벽·오전형") | (~d["결제회원"] & _has(COL["q_when"], "새벽")(d))),
-    ("P06_복귀라이더", "문자 페르소나 ⑥ 복귀 라이더 (설문 기반)",
-     "렌탈 목적 '오랜만에 라이딩(재입문)'. 휴면+과거 2회 이상은 이용 이력이 길어져야 판정 가능",
-     _has(COL["q_purpose"], "오랜만에 라이딩 (재입문)")),
+    ("P06_복귀라이더", "문자 페르소나 ⑥ 복귀 라이더 (실측)",
+     "휴면 + 과거 이용 2회 이상. 이력 없으면 설문 '오랜만에 라이딩(재입문)'",
+     lambda d: (d["생애단계"].eq("휴면") & d["이력_이용횟수"].ge(2)) | (~d["이력고객"] & _has(COL["q_purpose"], "오랜만에 라이딩 (재입문)")(d))),
     ("P07_투어러", "문자 페르소나 ⑦ 중장년 투어러 (연령 제외)",
      "결제 취향장르 투어러/클래식, 또는 설문 목적 '투어링'",
      lambda d: _pay("취향장르")(d).isin(["투어러", "클래식"]) | _has(COL["q_purpose"], "투어링 (당일/박투어)")(d)),
     ("P08_스텝업", "문자 페르소나 ⑧ 스텝업 지망생 (실측)",
      "결제 고객 중 최대 이용 배기량 쿼터·미들급(리터급 미경험). 결제 없으면 설문 보유 쿼터·미들급",
-     lambda d: (d["결제회원"] & _pay("최대배기량")(d).isin(["쿼터급", "미들급"]))
-               | (~d["결제회원"] & d["보유바이크_급"].isin(["쿼터급", "미들급"]))),
+     lambda d: (d["이력고객"] & d["이력_최대배기량"].isin(["쿼터급", "미들급"]))
+               | (~d["이력고객"] & d["보유바이크_급"].isin(["쿼터급", "미들급"]))),
     ("L_첫이용30일", "생애주기 CP011 첫이용 30일 재방문",
      "결제 1회 + 첫 이용 후 27~35일 경과 (기준일 대비)",
      lambda d: d["결제회원"] & d["결제횟수"].eq(1) & _pay("첫이용_경과일")(d).between(27, 35)),
@@ -535,10 +856,14 @@ PERSONA_DEFS = [
      lambda d: d["결제회원"] & _pay("프로모사용")(d).eq(True)),
     ("L_단골2회이상", "생애주기 CP008 이탈위험 win-back 후보",
      "결제 2회 이상. 최근성 30일 넘으면 win-back 대상",
-     lambda d: d["결제회원"] & d["결제횟수"].ge(2)),
-    ("L_회원_미결제", "퍼널: 회원이지만 결제 이력 없음",
-     "회원 + 결제 0회 (조회 기간 07-01~08-13 기준)",
-     lambda d: ~d["결제회원"]),
+     lambda d: d["이력고객"] & d["이력_이용횟수"].ge(2)),
+    ("L_회원_미결제", "퍼널: 회원이지만 이용 이력 없음",
+     "회원 + 3월 이후 유효 이용 0회",
+     lambda d: ~d["이력고객"]),
+    ("L_활성", "생애단계 활성", "최근 이용 30일 이내", lambda d: d["생애단계"].eq("활성")),
+    ("L_이탈위험", "생애주기 CP008 이탈위험 win-back", "이용 2회 이상 + 최근 이용 31~90일", lambda d: d["생애단계"].eq("이탈위험")),
+    ("L_휴면", "휴면 고객 (가을 시즌 각성 캠페인 풀)", "이용 이력 있음 + 활성/이탈위험 아님", lambda d: d["생애단계"].eq("휴면")),
+    ("VIP_산정", "VIP (최종세분화명단 정의 재산정)", "3월 이후 이용 3회+ 또는 순결제 20만+ 또는 RCA교차+결제", lambda d: d["VIP산정"]),
     # (태그, 전략문서 명칭, 근거 조건 설명, 필터)
     ("S05_장롱면허입문", "세그먼트 ⑤ 장롱면허 / 보험 소구 1순위",
      "경력 3개월 미만 + 바이크 없음, 또는 목적 '입문 전 연습'",
@@ -576,7 +901,7 @@ def assign_personas(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, pd.Series
     masks: dict[str, pd.Series] = {}
     for tag, _name, _why, fn in PERSONA_DEFS:
         m = fn(df).fillna(False).astype(bool) & ~df["마케팅제외"]
-        if tag.startswith(("P03", "P04", "L_")) or (tag.startswith("P") and "결제회원" in df.columns):
+        if tag.startswith(("P03", "P04", "L_", "VIP")) or (tag.startswith("P") and "결제회원" in df.columns):
             pass  # 실측 기반 태그는 설문 완료 여부와 무관
         else:
             m = m & df["설문완료_bool"]
@@ -667,6 +992,8 @@ EXPORT_COLS = [
     COL["survey_done"], COL["survey_at"], "리드스코어", "리드등급", "세그먼트", "페르소나", "동기그룹", "중복그룹", "대표계정", "마케팅제외", "탈퇴", "회원관리_번호", "RCA회원", "RCA구분", "RCA_수강횟수", "RCA_등급",
     "결제회원", "결제횟수", "취소횟수", "순결제금액", "첫예약일", "최근예약일", "최근성_일", "주지점", "취향브랜드", "취향장르", "이용모델",
     "최대배기량", "평균이용시간", "주말성향", "시간성향", "유입경로_결제", "프로모사용",
+    "이력고객", "이력_이용횟수", "이력_이용금액", "이력_첫이용일", "이력_최근이용일", "이력_최근성_일", "이력_최대배기량", "이력_이용장르", "생애단계",
+    "VIP산정", "기존VIP", "기존세그먼트", "수신거부", "발송횟수", "최근발송일", "발송캠페인", "발송후전환", "발송전환금액",
     COL["q_source"], COL["q_exp"], "보유바이크_급", "보유바이크_모델", COL["q_purpose"], COL["q_reason"],
     COL["q_buy"], COL["q_when"], COL["q_factor"], COL["q_next"], COL["q_wish"],
 ]
@@ -851,6 +1178,42 @@ def rca_summary(df: pd.DataFrame, rca: pd.DataFrame | None) -> dict | None:
     }
 
 
+def history_summary(df: pd.DataFrame, E: pd.DataFrame | None) -> dict | None:
+    if E is None:
+        return None
+    V = E[~E["취소"]]
+    hist = df[df["이력고객"]]
+    return {
+        "period": f"{E['접수'].min():%Y-%m-%d} ~ {E['접수'].max():%Y-%m-%d}",
+        "events": int(len(E)), "valid_events": int(len(V)),
+        "by_source": E["출처"].value_counts().to_dict(),
+        "monthly_net": {str(k): int(v) for k, v in V.groupby(V["접수"].dt.to_period("M"))["순결제"].sum().items()},
+        "monthly_customers": {str(k): int(v) for k, v in V.groupby(V["접수"].dt.to_period("M"))["고객키"].nunique().items()},
+        "customers": int(V["고객키"].nunique()),
+        "members_with_history": int(len(hist)),
+        "stage": hist["생애단계"].value_counts().to_dict(),
+        "stage_x_consent": pd.crosstab(hist["생애단계"], hist["마케팅상태"]).to_dict(orient="index"),
+        "visits_dist": hist["이력_이용횟수"].clip(upper=5).value_counts().sort_index().to_dict(),
+        "vip_calc": int(hist["VIP산정"].sum()),
+        "vip_prior": df["기존VIP"].value_counts().to_dict(),
+        "suppressed": int(df["수신거부"].sum()),
+        "monthly_new_customers": {str(k): int(v) for k, v in V.groupby("고객키")["접수"].min().dt.to_period("M").value_counts().sort_index().items()},
+    }
+
+
+def send_summary(L: pd.DataFrame) -> dict:
+    C = campaign_performance(L)
+    per = L.groupby("연락처_정규화").size()
+    monthly = L.groupby([L["발송일"].dt.strftime("%Y-%m"), "연락처_정규화"]).size()
+    return {
+        "sends": int(len(L)), "recipients": int(per.size),
+        "campaigns": C.to_dict(orient="records"),
+        "conversion_window_days": 14,
+        "over_cap_month": int((monthly > 2).sum()),
+        "recipients_2plus": int((per >= 2).sum()),
+    }
+
+
 def write_markdown(summary: dict, path: Path) -> None:
     o = summary["overview"]
     sv = summary["survey"]
@@ -979,6 +1342,60 @@ def write_markdown(summary: dict, path: Path) -> None:
         L.append("\n요일별 건수(0=월): " + ", ".join(f"{k} {v}" for k, v in py['by_weekday'].items()))
         L.append("\n고객 시간성향: " + ", ".join(f"{k} {v}" for k, v in py['time_pref'].items()) + " · 주말성향: " + ", ".join(f"{k} {v}" for k, v in py['weekend_pref'].items()))
         L.append("")
+    wb = summary.get("web")
+    if wb:
+        L.append("\n## 11. 웹 방문·캠페인 유입 (월별 최신 내보내기 기준)\n")
+        L.append("| 월 | 방문자 | PV | 예약시작 | 문의 |\n|---|---|---|---|---|")
+        for r in wb["monthly"]:
+            L.append(f"| {r['월']} | {r['방문자수']:,} | {r['페이지뷰(PV)']:,} | {r['예약시작']:,} | {r['문의제출']} |")
+        L.append("\n소스·매체별 (캠페인 유입 시트 합계, 2026-07~09):\n")
+        L.append("| 소스 | 매체 | 방문자 | 예약시작 | 예약확정 | 순결제 | 확정율 |\n|---|---|---|---|---|---|---|")
+        for r in wb["by_medium"]:
+            L.append(f"| {r['소스']} | {r['매체']} | {r['방문자']:,} | {r['예약시작']:,} | {r['예약확정']} | {r['순결제']:,} | {r['확정율%']}% |")
+        L.append("\n캠페인별:\n")
+        L.append("| 캠페인 | 월 | 방문자 | 예약시작 | 예약확정 | 순결제 | 확정율 |\n|---|---|---|---|---|---|---|")
+        for r in wb["by_campaign"]:
+            L.append(f"| {r['캠페인']} | {r['월']} | {r['방문자']:,} | {r['예약시작']:,} | {r['예약확정']} | {r['순결제']:,} | {r['확정율%']}% |")
+        L.append("")
+    hs = summary.get("history")
+    if hs:
+        L.append("\n## 12. 이용 이력 통합 (예약이력 3월~ + 결제상세)\n")
+        L.append("| 항목 | 값 |\n|---|---|")
+        L.append(f"| 기간 | {hs['period']} |")
+        L.append(f"| 이벤트 / 유효 | {hs['events']:,} / {hs['valid_events']:,} ({', '.join(f'{k} {v}' for k, v in hs['by_source'].items())}) |")
+        L.append(f"| 유효 이용 고객 | {hs['customers']:,} (회원 매칭 {hs['members_with_history']:,}) |")
+        L.append(f"| 생애단계 (활성 ≤30일, 이탈위험 2회+ & 31~90일, 그 외 휴면) | " + ", ".join(f"{k} {v}" for k, v in hs['stage'].items()) + " |")
+        L.append(f"| 이용횟수 분포 (5+는 합산) | " + ", ".join(f"{k}회 {v}" for k, v in hs['visits_dist'].items()) + " |")
+        L.append(f"| VIP 재산정(3회+ / 20만+ / RCA교차+결제) | {hs['vip_calc']} (기존 명단 표기: " + ", ".join(f"{k} {v}" for k, v in hs['vip_prior'].items()) + ") |")
+        L.append(f"| 수신거부 반영 | {hs['suppressed']}명 마케팅 제외 |")
+        L.append("\n월별 순매출: " + ", ".join(f"{k} {v:,}" for k, v in hs['monthly_net'].items()))
+        L.append("\n월별 이용 고객: " + ", ".join(f"{k} {v}" for k, v in hs['monthly_customers'].items()))
+        L.append("\n월별 첫 이용 고객(신규): " + ", ".join(f"{k} {v}" for k, v in hs['monthly_new_customers'].items()))
+        L.append("\n생애단계 × 마케팅 상태:\n")
+        L.append("| 단계 | 동의 | 미동의 | 미응답 |\n|---|---|---|---|")
+        for k, v in hs["stage_x_consent"].items():
+            L.append(f"| {k} | {v.get('동의', 0)} | {v.get('미동의', 0)} | {v.get('미응답', 0)} |")
+    ss = summary.get("sends")
+    if ss:
+        L.append(f"\n## 13. 문자 발송 이력과 명단 전수 대조 전환 (발송 후 {ss['conversion_window_days']}일 내 유효 결제)\n")
+        L.append(f"발송 {ss['sends']}건 / 수신자 {ss['recipients']}명 / 2회 이상 수신 {ss['recipients_2plus']}명 / 월 2통 상한 초과 {ss['over_cap_month']}명\n")
+        L.append("| 발송일 | 캠페인 | 타겟 | 발송 | 전환자 | 전환율 | 전환매출 | 근거 |\n|---|---|---|---|---|---|---|---|")
+        for r in ss["campaigns"]:
+            n = f"{int(r['발송']):,}" if r['발송'] == r['발송'] and r['발송'] is not None else "-"
+            rate = f"{r['전환율%']}%" if r['전환율%'] == r['전환율%'] else "-"
+            L.append(f"| {r['발송일']} | {r['캠페인']} | {r['타겟']} | {n} | {r['전환자']} | {rate} | {int(r['전환매출']):,} | {r['근거']} |")
+        L.append("")
+    rp = summary.get("recipient_profile")
+    if rp:
+        L.append(f"\n## 14. 문자 수신자 프로필 (수신자 {rp['recipients_total']}명, 회원 매칭 {rp['recipients_matched']}명)\n")
+        L.append("차원별 전환율 (개인 명단이 있는 발송 기준. 생애단계는 발송 시점의 상태, 시간성향·장르는 전체 이력 기준):\n")
+        for dcol, tbl in rp["by_dimension"].items():
+            L.append(f"- **{dcol}**: " + ", ".join(f"{k} {v['발송']}명→{v['전환자']}명({v['전환율%']}%)" for k, v in tbl.items()))
+        L.append("\n타겟별 구성(상위 값)과 전환자 특징:\n")
+        L.append("| 캠페인 | 타겟 | 발송 | 이력고객 | 전환 | 생애단계 | 시간성향 | 취향장르 | 마케팅상태 | 전환자 시간성향 |\n|---|---|---|---|---|---|---|---|---|---|")
+        for r in rp["by_target"]:
+            L.append(f"| {r['캠페인']} | {r['타겟']} | {r['발송']} | {r['이력고객']} | {r['전환자']} ({r['전환율%']}%) | {r['생애단계']} | {r['시간성향']} | {r['취향장르']} | {r['마케팅상태']} | {r['전환자_시간성향']} |")
+        L.append("")
     ma = summary["member_admin"]
     L.append(f"\n회원관리 파일 매칭: {ma['matched']:,}명 실명 확인 / 미매칭 {ma['unmatched']:,}명 / 탈퇴 {ma['withdrawn']}명\n")
     L.append("\n세그먼트별 명단은 `crm/output/CRM_마스터_*.xlsx` 의 각 시트에 있다(개인정보 포함, git 미추적).\n")
@@ -989,12 +1406,15 @@ def write_markdown(summary: dict, path: Path) -> None:
 # 출력
 # ---------------------------------------------------------------------------
 def write_excel(df: pd.DataFrame, seg_frames: dict[str, pd.DataFrame], summary: dict, path: Path,
-                rca: pd.DataFrame | None = None) -> None:
+                rca: pd.DataFrame | None = None, WB: pd.DataFrame | None = None, WC: pd.DataFrame | None = None,
+                L: pd.DataFrame | None = None, CP: pd.DataFrame | None = None, RPT: pd.DataFrame | None = None) -> None:
     def prep(d: pd.DataFrame) -> pd.DataFrame:
         out = d[EXPORT_COLS].copy()
         out["대표계정"] = out["대표계정"].map({True: "Y", False: "N"})
         out["마케팅제외"] = out["마케팅제외"].map({True: "Y", False: ""})
         out["탈퇴"] = out["탈퇴"].map({True: "Y", False: ""})
+        for c in ["이력고객", "VIP산정", "수신거부", "발송후전환"]:
+            out[c] = out[c].map({True: "Y", False: ""})
         return out.sort_values(["리드스코어", COL["joined"]], ascending=[False, False])
 
     with pd.ExcelWriter(path, engine="openpyxl") as xw:
@@ -1012,6 +1432,15 @@ def write_excel(df: pd.DataFrame, seg_frames: dict[str, pd.DataFrame], summary: 
             for g in ["R1_헤비", "R2_수강경험", "R3_미수강"]:
                 rc[rc["RCA구분"] == g].to_excel(xw, sheet_name=f"RCA_{g}"[:31], index=False)
 
+        if L is not None:
+            CP.to_excel(xw, sheet_name="캠페인성과_명단대조", index=False)
+            Lx = L.copy(); Lx["발송일"] = Lx["발송일"].dt.date
+            Lx.to_excel(xw, sheet_name="발송이력", index=False)
+            if RPT is not None:
+                RPT.to_excel(xw, sheet_name="발송수신자_프로필", index=False)
+        if WB is not None:
+            WB.to_excel(xw, sheet_name="웹_월별", index=False)
+            WC.to_excel(xw, sheet_name="웹_캠페인유입", index=False)
         # 열 너비 보정
         for ws in xw.book.worksheets:
             for col_cells in ws.columns:
@@ -1032,8 +1461,36 @@ def main() -> None:
     df, rca = merge_rca(df, load_rca())
     P = load_payments()
     cutoff_ts = pd.Timestamp(df[COL["joined"]].max())
+    if P is not None:
+        cutoff_ts = max(cutoff_ts, P["결제일시"].max().normalize())
     A = customer_aggregates(P, cutoff_ts) if P is not None else None
     df = merge_payments(df, A)
+    # 3월부터의 이용 이력(예약이력 + 결제상세)
+    E = unify_history(P, load_reservation_history())
+    HA = history_aggregates(E, cutoff_ts) if E is not None else None
+    df = merge_by_key(df, HA, ["이력_이용횟수", "이력_이용금액", "이력_첫이용일", "이력_최근이용일", "이력_이용지점수",
+                                "이력_최대배기량", "이력_이용장르", "이력_취소횟수", "이력_최근성_일", "생애단계"])
+    df["이력_이용횟수"] = df["이력_이용횟수"].fillna(0).astype(int)
+    df["이력고객"] = df["이력_이용횟수"].gt(0)
+    df["생애단계"] = df["생애단계"].fillna("미이용")
+    # 기존 명단의 VIP·세그먼트, 수신거부
+    df = df.merge(load_prior_vip(), on="연락처_정규화", how="left") if load_prior_vip() is not None else df.assign(기존VIP=pd.NA, 기존세그먼트=pd.NA)
+    sup = load_suppression()
+    df["수신거부"] = df["연락처_정규화"].isin(sup)
+    df["마케팅제외"] = df["마케팅제외"] | df["수신거부"]
+    # VIP 재산정: 결제 3건+ / 순결제 20만+ / RCA 교차 + 결제 (최종세분화명단 정의)
+    df["VIP산정"] = df["이력_이용횟수"].ge(3) | df["이력_이용금액"].fillna(0).ge(200000) | (df["RCA회원"] & df["이력고객"])
+    # 발송 이력
+    L = load_send_log()
+    if L is not None:
+        L = attach_conversions(L, E)
+        SA = send_aggregates(L)
+        df = merge_by_key(df, SA, [c for c in SA.columns if c != "연락처_정규화"], key="연락처_정규화")
+        df["발송횟수"] = df["발송횟수"].fillna(0).astype(int)
+        df["발송후전환"] = df["발송후전환"].fillna(False).astype(bool)
+    else:
+        df["발송횟수"] = 0
+        df["발송후전환"] = False
     df = mark_duplicates(df)
     df, seg_masks = assign_segments(df)
     df, persona_masks = assign_personas(df)
@@ -1043,11 +1500,18 @@ def main() -> None:
     summary = build_summary(df, seg_frames, src)
     summary["rca"] = rca_summary(df, rca)
     summary["payments"] = payment_summary(P, A, df)
+    summary["history"] = history_summary(df, E)
+    summary["sends"] = send_summary(L) if L is not None else None
+    CP = campaign_performance(L) if L is not None else None
+    RP, RPT = (recipient_profile(df, L) if L is not None else (None, None))
+    summary["recipient_profile"] = RP
+    WB, WC = load_web_analytics()
+    summary["web"] = web_summary(WB, WC)
 
     cutoff = summary["meta"]["data_cutoff"]
     xlsx = OUT_DIR / f"CRM_마스터_{cutoff}.xlsx"
-    write_excel(df, seg_frames, summary, xlsx, rca)
-    (OUT_DIR / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=int), encoding="utf-8")
+    write_excel(df, seg_frames, summary, xlsx, rca, WB, WC, L, CP, RPT)
+    (OUT_DIR / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, default=lambda o: o.isoformat() if hasattr(o, "isoformat") else int(o)), encoding="utf-8")
     write_markdown(summary, OUT_DIR / "분석요약.md")
 
     print(f"source : {src}")
