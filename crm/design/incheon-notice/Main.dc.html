@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; font-family: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: #f2a93b; text-decoration: none; } a:hover { color: #ffc46a; }
+  </style>
+</helmet>
+<div style="width: 1100px; height: 720px; background: #e9e6e1; position: relative; overflow: hidden; font-family: 'IBM Plex Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;">
+  <!-- 뒤에 깔린 홈페이지(흐림 처리) -->
+  <div style="position: absolute; inset: 0; display: flex; flex-direction: column; gap: 0; opacity: 0.55; filter: blur(2px);">
+    <div style="height: 64px; background: #ffffff; display: flex; align-items: center; justify-content: space-between; padding: 0 48px; box-sizing: border-box;">
+      <div style="font-weight: 700; letter-spacing: 0.18em; font-size: 14px; color: #17171a;">ARTEFINE</div>
+      <div style="display: flex; gap: 28px; font-size: 13px; color: #55555c;"><span>라인업</span><span>지점</span><span>예약</span><span>멤버십</span></div>
+    </div>
+    <div style="flex: 1; background: #cfcac2;"></div>
+  </div>
+  <!-- 딤 -->
+  <div style="position: absolute; inset: 0; background: rgba(12, 12, 14, 0.62);"></div>
+
+  <!-- 팝업 -->
+  <div style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 640px; background: #141416; color: #f4f1ec; border-radius: 6px; box-shadow: 0 40px 80px rgba(0,0,0,0.5); overflow: hidden; display: flex; flex-direction: column;">
+    <div style="height: 4px; background: #f2a93b;"></div>
+    <div style="padding: 36px 40px 28px 40px; display: flex; flex-direction: column; gap: 18px;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="font-size: 12px; letter-spacing: 0.2em; color: #f2a93b; font-weight: 600;">NOTICE · 2026.09</div>
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#8d8a85" stroke-width="1.6" stroke-linecap="round"><path d="M5 5l10 10M15 5L5 15"></path></svg>
+      </div>
+      <div style="font-size: 34px; line-height: 1.25; font-weight: 700; letter-spacing: -0.01em; color: #ffffff;">인천 라운지, 잠시 리뉴얼합니다.</div>
+      <div style="font-size: 16px; line-height: 1.6; color: #b8b4ad;">인천의 모든 차량은 용산 라운지로 옮겨 운영합니다.<br>재오픈 일정은 확정되는 대로 안내드리겠습니다.</div>
+
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 6px;">
+        <div style="background: #1e1e21; border: 1px solid #2a2a2e; border-radius: 4px; padding: 16px 16px 14px 16px; display: flex; flex-direction: column; gap: 6px;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f2a93b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h13M13 6l6 6-6 6"></path></svg>
+          <div style="font-size: 20px; font-weight: 700; color: #ffffff;">인천 차량 9대</div>
+          <div style="font-size: 13px; color: #9a968f; line-height: 1.45;">용산으로 이동, 용산 총 21대</div>
+        </div>
+        <div style="background: #1e1e21; border: 1px solid #2a2a2e; border-radius: 4px; padding: 16px 16px 14px 16px; display: flex; flex-direction: column; gap: 6px;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f2a93b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5V12l3 2"></path></svg>
+          <div style="font-size: 20px; font-weight: 700; color: #ffffff;">+1시간</div>
+          <div style="font-size: 13px; color: #9a968f; line-height: 1.45;">인천 이용 고객, 용산 2시간 이상 예약 시</div>
+        </div>
+        <div style="background: #1e1e21; border: 1px solid #2a2a2e; border-radius: 4px; padding: 16px 16px 14px 16px; display: flex; flex-direction: column; gap: 6px;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f2a93b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16z"></path><path d="M10 20a2 2 0 0 0 4 0"></path></svg>
+          <div style="font-size: 20px; font-weight: 700; color: #ffffff;">재오픈 알림</div>
+          <div style="font-size: 13px; color: #9a968f; line-height: 1.45;">신청하시면 오픈 첫 주 우선 예약</div>
+        </div>
+      </div>
+
+      <div style="font-size: 13px; color: #8d8a85; line-height: 1.5; display: flex; gap: 8px; align-items: flex-start;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8d8a85" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 2px;"><path d="M12 21s-6-5.2-6-10a6 6 0 0 1 12 0c0 4.8-6 10-6 10z"></path><circle cx="12" cy="11" r="2.2"></circle></svg>
+        <span>용산 라운지 · [용산 주소] · [가까운 역] 도보 [n]분 · 매일 10:00~02:00</span>
+      </div>
+
+      <div style="display: flex; gap: 10px; margin-top: 4px;">
+        <div style="flex: 1; height: 52px; background: #f2a93b; color: #141416; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700;">용산 라인업 보고 예약하기</div>
+        <div style="flex: 1; height: 52px; background: transparent; color: #f4f1ec; border: 1px solid #3a3a3f; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 600;">재오픈 알림 신청</div>
+      </div>
+    </div>
+    <div style="border-top: 1px solid #2a2a2e; padding: 14px 40px; display: flex; justify-content: space-between; font-size: 13px; color: #8d8a85;">
+      <span>오늘 하루 보지 않기</span>
+      <span>닫기</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

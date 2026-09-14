@@ -1,0 +1,14 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1100, "h": 720, "title": "첫 진입 팝업 · 데스크톱" },
+    { "file": "PopupMobile.dc.html", "x": 1200, "y": 0, "w": 390, "h": 844, "title": "첫 진입 팝업 · 모바일" },
+    { "file": "HeroDesktop.dc.html", "x": 0, "y": 1000, "w": 1440, "h": 800, "title": "메인 히어로 · 데스크톱" },
+    { "file": "HeroMobile.dc.html", "x": 1560, "y": 1000, "w": 390, "h": 844, "title": "메인 히어로 · 모바일" },
+    { "file": "PopupLight.dc.html", "x": 0, "y": 1960, "w": 1100, "h": 720, "title": "대안 · 밝은 팝업" }
+  ],
+  "annotations": [
+    { "id": "note-copy", "x": 1200, "y": 980, "w": 320, "text": "[용산 주소] [가까운 역] [n]분 은 실제 값으로 교체.\n+1시간 혜택은 제안값 (홍보플랜 2절 근거). 확정 전이면 이 줄만 빼고 게시." },
+    { "id": "note-alt", "x": 1200, "y": 1960, "w": 320, "text": "대안: 홈페이지 톤이 밝은 화이트 계열이면 이 버전을 쓴다. 문구는 동일." }
+  ],
+  "launch": { "view": "canvas" }
+}
