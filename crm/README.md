@@ -6,6 +6,7 @@
 crm/
 ├── data/raw/            # 원본 내보내기 파일 (개인정보 포함, git 미추적)
 ├── scripts/build_dashboard.py # summary.json → dashboard.html (읽기용)
+├── scripts/build_forecast.py # 결제내역·웹분석 → 지점별 주간 매출 예측·확보 예약·퍼널·주의 필요 플래그
 ├── scripts/build_crm.py # 정규화 → 회원관리·RCA·결제·예약이력·발송명단 병합 → 생애단계·VIP → 세그먼트·페르소나 → 발송 전환 대조 → 출력
 ├── output/
 │   ├── CRM_마스터_<기준일>.xlsx   # 회원 마스터 + 세그먼트·페르소나·RCA·발송 시트 (개인정보 포함, git 미추적)
@@ -26,6 +27,7 @@ crm/
 pip install pandas openpyxl
 python3 crm/scripts/build_crm.py            # raw/ 의 최신 '*전체*.xlsx' 사용 → 마스터·타겟통합·발송용 xlsx + 요약
 python3 crm/scripts/build_dashboard.py      # → output/dashboard.html (Artifact 로 재발행하면 같은 링크가 갱신됨)
+python3 crm/scripts/build_forecast.py       # 주간 예측 → output/주간예측_<기준일>.md/.xlsx (결제내역·웹분석만 있으면 됨)
 python3 crm/scripts/build_crm.py --master crm/data/raw/회원설문_2026-09-01_전체.xlsx
 ```
 
@@ -54,6 +56,10 @@ python3 crm/scripts/build_crm.py --master crm/data/raw/회원설문_2026-09-01_�
 발송 시각은 파일명의 HHMM → `SEND_TIMES`(회차별 기록) → 10:00 가정 순으로 정해지고 `발송시각_근거` 컬럼에 파일명/기록/추정으로 표시된다. 반응 타이밍 분석(15절)은 이 시각을 기준으로 발송→첫 결제 경과시간을 계산하므로 실제 발송 시각을 파일명에 넣는 것이 좋다.
 
 새 차종이 결제에 나타나면 `MODEL_INFO`에 장르·배기량대를 한 줄 추가한다(없으면 '기타'로 집계된다). 운영 정책 상수는 `SEND_TO_UNASKED`(설문 도입 전 미응답자 발송 여부)와 `RCA_HEAVY_MIN`(R1 헤비 기준). 타겟 정의는 `TARGET_DEFS`, 세그먼트는 `SEGMENT_DEFS`, 페르소나는 `PERSONA_DEFS`.
+
+## 주간 예측 리포트
+
+매주 월요일: 결제 관리에서 **결제일 기준 최근 90일~오늘**, 방문 통계에서 최근 90일~오늘을 내보내 위 이름 규칙대로 `raw/`에 넣고 `build_forecast.py`를 실행한다. 공유는 `주간예측_<기준일>.md`(개인정보 없음), 리마인드·발송 명단은 같은 이름의 xlsx. 모델·플래그 기준은 `docs/주간예측_자동화_설계.md`.
 
 ## 원본 파일 이력
 

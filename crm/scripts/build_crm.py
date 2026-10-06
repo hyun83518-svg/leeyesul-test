@@ -469,6 +469,14 @@ def payment_summary(P: pd.DataFrame | None, A: pd.DataFrame | None, df: pd.DataF
 # ---------------------------------------------------------------------------
 # 웹 방문·캠페인 유입 리포트
 # ---------------------------------------------------------------------------
+def _daily_to_monthly(d: pd.DataFrame, nums: list[str], keys: list[str]) -> pd.DataFrame:
+    d = d.copy()
+    d["월"] = d.pop("날짜").str[:7]
+    for c in nums:
+        d[c] = pd.to_numeric(d[c], errors="coerce").fillna(0)
+    return d.groupby(["월", *keys], as_index=False)[nums].sum().astype({c: int for c in nums}).astype({c: str for c in nums})
+
+
 def load_web_analytics() -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
     """웹분석_<시작>_<끝>.xlsx: '기본 데이터'(월별 방문자/PV/예약시작/문의)와 '캠페인 유입'.
     같은 월이 여러 파일에 있으면 종료일이 가장 늦은 파일의 값을 쓴다(더 완전한 집계)."""
@@ -480,10 +488,14 @@ def load_web_analytics() -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
         m = re.findall(r"(\d{4}-\d{2}-\d{2})", f.name)
         end = m[-1] if m else f.name
         b = pd.read_excel(f, sheet_name="기본 데이터", dtype=str)
-        b["월"] = b["년/월"].str.extract(r"(\d{4})년\s*(\d{1,2})월").apply(lambda r: f"{r[0]}-{int(r[1]):02d}", axis=1)
+        c = pd.read_excel(f, sheet_name="캠페인 유입", dtype=str).rename(columns={"년/월": "월"})
+        if "날짜" in b.columns:   # 일별 내보내기(2026-10~): 월로 묶어 월별 내보내기와 같은 모양으로 맞춘다
+            b, c = _daily_to_monthly(b, ["방문자수", "페이지뷰(PV)", "예약시작", "문의제출"], []), \
+                _daily_to_monthly(c, ["방문자수", "세션", "예약시작", "예약확정", "결제금액", "취소건수", "환불금액"], ["소스", "매체", "캠페인", "콘텐츠"])
+        else:
+            b["월"] = b["년/월"].str.extract(r"(\d{4})년\s*(\d{1,2})월").apply(lambda r: f"{r[0]}-{int(r[1]):02d}", axis=1)
         b["_end"] = end
         basics.append(b)
-        c = pd.read_excel(f, sheet_name="캠페인 유입", dtype=str).rename(columns={"년/월": "월"})
         c["_end"] = end
         camps.append(c)
     # 같은 월이 여러 내보내기에 있으면 방문자 합이 가장 큰(=그 월을 온전히 담은) 내보내기를 채택

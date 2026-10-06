@@ -1,0 +1,492 @@
+[
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-06",
+  "branch": "대구",
+  "forecast": 51000.0,
+  "booked_exp": 21200.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-06",
+  "branch": "분당",
+  "forecast": 35600.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-06",
+  "branch": "용산",
+  "forecast": 394500.0,
+  "booked_exp": 193300.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-06",
+  "branch": "제주",
+  "forecast": 11200.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-06",
+  "branch": "진주",
+  "forecast": 173300.0,
+  "booked_exp": 161300.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-07",
+  "branch": "대구",
+  "forecast": 53800.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-07",
+  "branch": "분당",
+  "forecast": 64300.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-07",
+  "branch": "용산",
+  "forecast": 363500.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-07",
+  "branch": "제주",
+  "forecast": 111300.0,
+  "booked_exp": 91100.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-07",
+  "branch": "진주",
+  "forecast": 21800.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-08",
+  "branch": "대구",
+  "forecast": 45500.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-08",
+  "branch": "분당",
+  "forecast": 54300.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-08",
+  "branch": "용산",
+  "forecast": 306900.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-08",
+  "branch": "제주",
+  "forecast": 17000.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-08",
+  "branch": "진주",
+  "forecast": 18400.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-09",
+  "branch": "대구",
+  "forecast": 149000.0,
+  "booked_exp": 127100.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-09",
+  "branch": "분당",
+  "forecast": 26100.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-09",
+  "branch": "용산",
+  "forecast": 439200.0,
+  "booked_exp": 291700.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-09",
+  "branch": "제주",
+  "forecast": 8200.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-09",
+  "branch": "진주",
+  "forecast": 105800.0,
+  "booked_exp": 96900.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-10",
+  "branch": "대구",
+  "forecast": 191600.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-10",
+  "branch": "분당",
+  "forecast": 228700.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-10",
+  "branch": "용산",
+  "forecast": 1293400.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-10",
+  "branch": "제주",
+  "forecast": 71700.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-10",
+  "branch": "진주",
+  "forecast": 77500.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-11",
+  "branch": "대구",
+  "forecast": 93700.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-11",
+  "branch": "분당",
+  "forecast": 111800.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-11",
+  "branch": "용산",
+  "forecast": 977000.0,
+  "booked_exp": 344700.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-11",
+  "branch": "제주",
+  "forecast": 35000.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-11",
+  "branch": "진주",
+  "forecast": 264600.0,
+  "booked_exp": 226700.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-12",
+  "branch": "대구",
+  "forecast": 89000.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-12",
+  "branch": "분당",
+  "forecast": 106200.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-12",
+  "branch": "용산",
+  "forecast": 600500.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-12",
+  "branch": "제주",
+  "forecast": 33300.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-12",
+  "branch": "진주",
+  "forecast": 36000.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-13",
+  "branch": "대구",
+  "forecast": 89800.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-13",
+  "branch": "분당",
+  "forecast": 107200.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-13",
+  "branch": "용산",
+  "forecast": 606200.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-13",
+  "branch": "제주",
+  "forecast": 33600.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-13",
+  "branch": "진주",
+  "forecast": 36300.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-14",
+  "branch": "대구",
+  "forecast": 89800.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-14",
+  "branch": "분당",
+  "forecast": 107200.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-14",
+  "branch": "용산",
+  "forecast": 606200.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-14",
+  "branch": "제주",
+  "forecast": 33600.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-14",
+  "branch": "진주",
+  "forecast": 36300.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-15",
+  "branch": "대구",
+  "forecast": 52100.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-15",
+  "branch": "분당",
+  "forecast": 62200.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-15",
+  "branch": "용산",
+  "forecast": 352000.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-15",
+  "branch": "제주",
+  "forecast": 19500.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-15",
+  "branch": "진주",
+  "forecast": 21100.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-16",
+  "branch": "대구",
+  "forecast": 22600.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-16",
+  "branch": "분당",
+  "forecast": 27000.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-16",
+  "branch": "용산",
+  "forecast": 152700.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-16",
+  "branch": "제주",
+  "forecast": 8500.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-16",
+  "branch": "진주",
+  "forecast": 9200.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-17",
+  "branch": "대구",
+  "forecast": 191600.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-17",
+  "branch": "분당",
+  "forecast": 228700.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-17",
+  "branch": "용산",
+  "forecast": 1293400.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-17",
+  "branch": "제주",
+  "forecast": 71700.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-17",
+  "branch": "진주",
+  "forecast": 77500.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-18",
+  "branch": "대구",
+  "forecast": 93700.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-18",
+  "branch": "분당",
+  "forecast": 111800.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-18",
+  "branch": "용산",
+  "forecast": 632300.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-18",
+  "branch": "제주",
+  "forecast": 35000.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-18",
+  "branch": "진주",
+  "forecast": 37900.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-19",
+  "branch": "대구",
+  "forecast": 89000.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-19",
+  "branch": "분당",
+  "forecast": 106200.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-19",
+  "branch": "용산",
+  "forecast": 600500.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-19",
+  "branch": "제주",
+  "forecast": 33300.0,
+  "booked_exp": 0.0
+ },
+ {
+  "run": "2026-10-06",
+  "date": "2026-10-19",
+  "branch": "진주",
+  "forecast": 36000.0,
+  "booked_exp": 0.0
+ }
+]
