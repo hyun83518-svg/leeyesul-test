@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""한글날 '한 시간 더' 문자 발송 명단 (10/7 1차 · 10/8 2차) + 단골 직접 연락 명단.
+"""한글날 '한 시간 더' 문자 발송 명단 (10/7 1차 · 10/8 2차). 단골은 같은 명단 안에 표시한다.
 
 입력: crm/data/raw/발송명단_2026-10-01_1000_week-1001.xlsx (10/1 회차 명단: 거래고객·수강생·신규동의·제외)
       crm/data/raw/회원설문_<날짜>_전체.xlsx (최신 회원: 10월 신규 동의 추가, 수신동의 상태 갱신)
@@ -21,7 +21,8 @@ SRC = bc.RAW_DIR / "발송명단_2026-10-01_1000_week-1001.xlsx"
 OTHER_BRANCHES = {"Bundang", "Jinju", "Daegu", "Jeju"}  # 용산 오퍼와 무관한 지점만 이용한 사람은 뺀다
 OUT = bc.OUT_DIR / "발송명단_2026-10-07_1000_1009hangul.xlsx"
 WINDOW = (pd.Timestamp("2026-10-07"), pd.Timestamp("2026-10-12"))
-LINK = "{전용 링크}?utm_source=sms&utm_campaign=1009hangul"
+PROMO = "hour-1009"  # 할인 신청 때 정한 전용 링크 코드. 다르면 여기만 바꾼다
+LINK = f"https://www.artefine.co.kr/?promo={PROMO}&utm_source=sms&utm_medium=lms&utm_campaign=1009hangul"
 COLS = ["구분", "이름", "연락처", "마케팅수신", "비고"]
 
 SMS1 = f"""(광고) 아르테파인 용산
@@ -110,15 +111,14 @@ def main() -> None:
     yes = base[base["마케팅수신"].eq("동의")]
     unasked = base[base["마케팅수신"].eq("미응답")]
 
-    # 단골 직접 연락: 용산 이용, 2회 이상 · 1박 이상 · 누적 20만원 이상 중 하나, 예약 없는 사람
+    # 단골 표시: 용산 이용, 2회 이상 · 1박 이상 · 누적 20만원 이상 중 하나 (직접 연락은 하지 않고 같은 문자를 받는다)
     g = G.assign(ph=G["연락처"].map(bc.normalize_phone))
     for c in ["결제건수(8/28~9/30)", "순결제금액", "1박이상 건수"]:
         g[c] = pd.to_numeric(g[c], errors="coerce").fillna(0)
-    vip = g[g["이용지점"].str.contains("Yongsan") & ((g["결제건수(8/28~9/30)"] >= 2) | (g["1박이상 건수"] >= 1) | (g["순결제금액"] >= 200000))
-            & ~g["ph"].isin(booked) & ~g["ph"].isin(ad_no) & g["ph"].map(status).fillna(g["마케팅수신"]).eq("동의")].sort_values("순결제금액", ascending=False)
-    vip = vip.assign(연락일=[["10/6", "10/7", "10/8"][min(i * 3 // max(len(vip), 1), 2)] for i in range(len(vip))], 결과="", 예약여부="")
-    vip = vip[["연락일", "고객명", "연락처", "마케팅수신", "결제건수(8/28~9/30)", "1박이상 건수", "순결제금액", "최근 예약일", "이용 차종", "결과", "예약여부"]]
-    vip_script = "안녕하세요, 아르테파인 용산입니다. 지난번 {차종} 타셨던 거 기억하시죠? 이번 한글날 연휴(10/9~10/11)에 3시간 이상 시승하시면 1시간을 무료로 드려요. 연휴 차량이 빨리 차서 먼저 연락드렸습니다. 링크 드릴까요?"
+    vip_ph = set(g.loc[g["이용지점"].str.contains("Yongsan") & ((g["결제건수(8/28~9/30)"] >= 2) | (g["1박이상 건수"] >= 1)
+                                                         | (g["순결제금액"] >= 200000)), "ph"])
+    yes = yes.assign(단골=yes["ph"].isin(vip_ph).map({True: "단골", False: ""}))
+    yes = yes.sort_values(["단골", "구분"], ascending=[False, True])
 
     summary = pd.DataFrame([
         ["1차 발송 (10/7 10:00) — 전체", len(yes), "1_문자1차 시트를 문자 툴에 그대로 붙여 넣는다"],
@@ -128,20 +128,18 @@ def main() -> None:
         ["  └ 신규 동의 회원(10/1~10/6 가입)", int((yes["구분"] == "신규동의(10월)").sum()), f"{mfile.name} 기준"],
         ["  └ 이전 가입 동의 회원", int((yes["구분"] == "이전 동의회원").sum()), "9/30 이전 가입, 이전 회차에서 받은 사람 포함"],
         ["2차 발송 (10/8 12:00)", "1차 대상 − 그 사이 예약자", "10/8 오전 최신 결제내역을 raw/ 에 넣고 이 스크립트를 다시 실행 → 1_문자1차 시트를 2차 명단으로 사용"],
-        ["단골 직접 연락 (10/6~10/8)", len(vip), "참고_단골직접연락 시트. 수신동의한 단골만. 3일에 나눠 연락, 결과·예약여부 칸을 채운다"],
+        ["  (그중 단골 표시)", int((yes["단골"] == "단골").sum()), "용산 2회 이상·1박 이상·누적 20만원 이상. 직접 연락 없이 같은 문자를 받는다"],
         ["제외", len(X), "9_제외 시트 (사유별)"],
         ["1차 문안 바이트(EUC-KR)", euckr_bytes(SMS1), "LMS(2,000바이트 이하)"],
         ["2차 문안 바이트(EUC-KR)", euckr_bytes(SMS2), "LMS"],
-        ["주의", "", "{전용 링크}를 할인 등록 후 받은 실제 링크로 바꾼다. 발송 직전 최신 회원 설문을 raw/ 에 넣고 다시 실행하면 새 가입자·수신거부가 반영된다."],
+        ["주의", "", f"문안 링크의 promo={PROMO} 는 할인 등록 때 정한 코드와 같아야 한다. 발송 직전 최신 회원 설문을 raw/ 에 넣고 다시 실행하면 새 가입자·수신거부가 반영된다."],
     ], columns=["항목", "인원", "설명"])
     reasons = X["제외사유"].value_counts().rename_axis("제외사유").reset_index(name="인원")
 
     with pd.ExcelWriter(OUT, engine="openpyxl") as xw:
         summary.to_excel(xw, sheet_name="0_요약", index=False)
-        yes[COLS + ["이용지점"]].to_excel(xw, sheet_name="1_문자1차", index=False)
+        yes[["단골"] + COLS + ["이용지점"]].to_excel(xw, sheet_name="1_문자1차", index=False)
         unasked[COLS + ["이용지점"]].to_excel(xw, sheet_name="참고_미응답_동의받기", index=False)
-        vip.to_excel(xw, sheet_name="참고_단골직접연락", index=False)
-        pd.DataFrame({"직접 연락 스크립트": [vip_script]}).to_excel(xw, sheet_name="참고_연락스크립트", index=False)
         pd.DataFrame({"회차": ["1차 10/7 10:00", "2차 10/8 12:00"], "문안": [SMS1, SMS2],
                       "바이트(EUC-KR)": [euckr_bytes(SMS1), euckr_bytes(SMS2)]}).to_excel(xw, sheet_name="문안", index=False)
         pd.concat([reasons, pd.DataFrame([{}]), X[COLS + ["제외사유"]]]).to_excel(xw, sheet_name="9_제외", index=False)

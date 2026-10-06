@@ -84,7 +84,9 @@ for (let i = 0; i < md.length; i++) {
 if (images.length) {
   body.push(new Paragraph({ heading: HeadingLevel.HEADING_1, spacing: { before: 320, after: 140 }, children: runs("첨부 — 인스타그램·광고 소재", { size: 28, bold: true }) }));
   for (const img of images) {
-    body.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 80 }, children: [new ImageRun({ type: "png", data: fs.readFileSync(img), transformation: { width: 360, height: 450 } })] }));
+    const buf = fs.readFileSync(img);
+    const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20), H = 450;  // PNG 원본 비율 유지
+    body.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 80 }, children: [new ImageRun({ type: "png", data: buf, transformation: { width: Math.round(H * w / h), height: H } })] }));
     body.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 200 }, children: [new TextRun({ text: path.basename(img), font: FONT, size: 16, color: "78716C" })] }));
   }
 }
