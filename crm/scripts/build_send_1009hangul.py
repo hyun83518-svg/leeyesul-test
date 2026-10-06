@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 import pandas as pd
 
@@ -21,8 +22,9 @@ SRC = bc.RAW_DIR / "발송명단_2026-10-01_1000_week-1001.xlsx"
 OTHER_BRANCHES = {"Bundang", "Jinju", "Daegu", "Jeju"}  # 용산 오퍼와 무관한 지점만 이용한 사람은 뺀다
 OUT = bc.OUT_DIR / "발송명단_2026-10-07_1000_1009hangul.xlsx"
 WINDOW = (pd.Timestamp("2026-10-07"), pd.Timestamp("2026-10-12"))
-PROMO = "hour-1009"  # 할인 신청 때 정한 전용 링크 코드. 다르면 여기만 바꾼다
-LINK = f"https://www.artefine.co.kr/?promo={PROMO}&utm_source=sms&utm_medium=lms&utm_campaign=1009hangul"
+PROMO = "한글1009"  # 할인 신청 때 정한 전용 링크 코드. 다르면 여기만 바꾼다
+# 문자 앱이 한글 주소를 링크로 인식하지 못하는 경우가 있어 코드를 URL 인코딩해 넣는다
+LINK = f"https://www.artefine.co.kr/?promo={quote(PROMO)}&utm_source=sms&utm_medium=lms&utm_campaign=1009hangul"
 COLS = ["구분", "이름", "연락처", "마케팅수신", "비고"]
 
 SMS1 = f"""(광고) 아르테파인 용산
