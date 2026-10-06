@@ -106,8 +106,8 @@ def main() -> None:
     drop(base["ph"].isin(booked), "10/7~10/11 예약 보유")
     X = pd.concat(excl, ignore_index=True)
 
-    # 10/6 결정: 수신동의 미응답 거래고객도 포함(9/13 운영 결정 SEND_TO_UNASKED 와 같음)
-    yes = base[base["마케팅수신"].isin(["동의", "미응답"])]
+    # 10/6 결정: 수신동의 미응답(설문 도입 전 가입이라 동의를 받은 적 없음)은 광고 문자에서 뺀다
+    yes = base[base["마케팅수신"].eq("동의")]
     unasked = base[base["마케팅수신"].eq("미응답")]
 
     # 단골 직접 연락: 용산 이용, 2회 이상 · 1박 이상 · 누적 20만원 이상 중 하나, 예약 없는 사람
@@ -115,20 +115,20 @@ def main() -> None:
     for c in ["결제건수(8/28~9/30)", "순결제금액", "1박이상 건수"]:
         g[c] = pd.to_numeric(g[c], errors="coerce").fillna(0)
     vip = g[g["이용지점"].str.contains("Yongsan") & ((g["결제건수(8/28~9/30)"] >= 2) | (g["1박이상 건수"] >= 1) | (g["순결제금액"] >= 200000))
-            & ~g["ph"].isin(booked) & ~g["ph"].isin(ad_no)].sort_values("순결제금액", ascending=False)
-    vip = vip.assign(연락일=[["10/6", "10/7", "10/8"][min(i // 25, 2)] for i in range(len(vip))], 결과="", 예약여부="")
+            & ~g["ph"].isin(booked) & ~g["ph"].isin(ad_no) & g["ph"].map(status).fillna(g["마케팅수신"]).eq("동의")].sort_values("순결제금액", ascending=False)
+    vip = vip.assign(연락일=[["10/6", "10/7", "10/8"][min(i * 3 // max(len(vip), 1), 2)] for i in range(len(vip))], 결과="", 예약여부="")
     vip = vip[["연락일", "고객명", "연락처", "마케팅수신", "결제건수(8/28~9/30)", "1박이상 건수", "순결제금액", "최근 예약일", "이용 차종", "결과", "예약여부"]]
     vip_script = "안녕하세요, 아르테파인 용산입니다. 지난번 {차종} 타셨던 거 기억하시죠? 이번 한글날 연휴(10/9~10/11)에 3시간 이상 시승하시면 1시간을 무료로 드려요. 연휴 차량이 빨리 차서 먼저 연락드렸습니다. 링크 드릴까요?"
 
     summary = pd.DataFrame([
         ["1차 발송 (10/7 10:00) — 전체", len(yes), "1_문자1차 시트를 문자 툴에 그대로 붙여 넣는다"],
-        ["  └ 거래고객·수강생 (동의)", int(yes["구분"].isin(["거래고객", "수강생"]).sum() - len(unasked)), "용산 중심 + 인천 고객(인천 리뉴얼로 차량이 용산에 있음)"],
-        ["  └ 거래고객 (수신동의 미응답)", len(unasked), "9/13 운영 결정대로 포함"],
+        ["  └ 거래고객·수강생 (동의)", int(yes["구분"].isin(["거래고객", "수강생"]).sum()), "용산 중심 + 인천 고객(인천 리뉴얼로 차량이 용산에 있음)"],
+        ["제외 — 수신동의 미응답 거래고객", len(unasked), "설문 도입 전 가입이라 동의를 받은 적 없음 → 광고 문자 제외. 참고_미응답_동의받기 시트: 다음 방문·반납 때 현장에서 수신동의를 받는다"],
         ["  └ 신규 동의 회원(9월 가입)", int((yes["구분"] == "신규동의").sum()), ""],
         ["  └ 신규 동의 회원(10/1~10/6 가입)", int((yes["구분"] == "신규동의(10월)").sum()), f"{mfile.name} 기준"],
         ["  └ 이전 가입 동의 회원", int((yes["구분"] == "이전 동의회원").sum()), "9/30 이전 가입, 이전 회차에서 받은 사람 포함"],
         ["2차 발송 (10/8 12:00)", "1차 대상 − 그 사이 예약자", "10/8 오전 최신 결제내역을 raw/ 에 넣고 이 스크립트를 다시 실행 → 1_문자1차 시트를 2차 명단으로 사용"],
-        ["단골 직접 연락 (10/6~10/8)", len(vip), "참고_단골직접연락 시트. 하루 25명씩, 결과·예약여부 칸을 채운다"],
+        ["단골 직접 연락 (10/6~10/8)", len(vip), "참고_단골직접연락 시트. 수신동의한 단골만. 3일에 나눠 연락, 결과·예약여부 칸을 채운다"],
         ["제외", len(X), "9_제외 시트 (사유별)"],
         ["1차 문안 바이트(EUC-KR)", euckr_bytes(SMS1), "LMS(2,000바이트 이하)"],
         ["2차 문안 바이트(EUC-KR)", euckr_bytes(SMS2), "LMS"],
@@ -139,6 +139,7 @@ def main() -> None:
     with pd.ExcelWriter(OUT, engine="openpyxl") as xw:
         summary.to_excel(xw, sheet_name="0_요약", index=False)
         yes[COLS + ["이용지점"]].to_excel(xw, sheet_name="1_문자1차", index=False)
+        unasked[COLS + ["이용지점"]].to_excel(xw, sheet_name="참고_미응답_동의받기", index=False)
         vip.to_excel(xw, sheet_name="참고_단골직접연락", index=False)
         pd.DataFrame({"직접 연락 스크립트": [vip_script]}).to_excel(xw, sheet_name="참고_연락스크립트", index=False)
         pd.DataFrame({"회차": ["1차 10/7 10:00", "2차 10/8 12:00"], "문안": [SMS1, SMS2],
