@@ -1,0 +1,11 @@
+@import url('fonts/fonts.css');
+:root{--ink:#15110f;--cream:#f3ead9;--org:#ff6a2b;--mute:#9d917f;--line:#3a322c}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--ink);color:var(--cream);font-family:'Noto Sans KR',sans-serif}
+.logo{display:flex;align-items:baseline;gap:14px}
+.logo .a{font-family:'Playfair Display',serif;font-style:italic;font-weight:900;line-height:1}
+.logo .f{font-family:'Montserrat',sans-serif;font-weight:300;letter-spacing:.24em;line-height:1}
+.logo .l{font-weight:400;letter-spacing:.34em;color:var(--mute);line-height:1}
+.bhs{font-family:'Black Han Sans',sans-serif;font-weight:400}
+.anton{font-family:'Anton',sans-serif}
+.ghost{position:absolute;font-family:'Black Han Sans';color:transparent;-webkit-text-stroke:2px #2b241f;line-height:.8;pointer-events:none}
