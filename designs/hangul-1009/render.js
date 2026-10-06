@@ -1,7 +1,7 @@
 const { chromium } = require('playwright');
 (async () => {
   const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' }).catch(() => chromium.launch());
-  const jobs = [['thumb.html',1600,900,'hangul-1009-package-thumb-1600x900.png'],['ig-package.html',1080,1350,'hangul-1009-ig-package-1080x1350.png'],['ig-ride.html',1080,1350,'hangul-1009-ig-ride-1080x1350.png'],['ig-hour.html',1080,1350,'hangul-1009-ig-onehour-1080x1350.png'],['ig-hour-story.html',1080,1920,'hangul-1009-ig-onehour-story-1080x1920.png']];
+  const jobs = [['thumb.html',1600,900,'hangul-1009-package-thumb-1600x900.png'],['ig-package.html',1080,1350,'hangul-1009-ig-package-1080x1350.png'],['ig-ride.html',1080,1350,'hangul-1009-ig-ride-1080x1350.png'],['ig-hour.html',1080,1350,'hangul-1009-ig-onehour-1080x1350.png'],['ig-hour-story.html',1080,1920,'hangul-1009-ig-onehour-story-1080x1920.png'],['poster-feed.html',1080,1350,'hangul-1009-poster-feed-1080x1350.png'],['poster-story.html',1080,1920,'hangul-1009-poster-story-1080x1920.png']];
   for (const [f,w,h,o] of jobs) {
     const p = await b.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
     await p.goto('file://' + __dirname + '/' + f, { waitUntil: 'networkidle' });

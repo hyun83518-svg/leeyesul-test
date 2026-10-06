@@ -1,0 +1,19 @@
+@import url('fonts/fonts.css');
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--ink:#15110f;--paper:#f3ead9;--org:#ff5a1f;--mute:#7a6e60}
+body{background:var(--paper);font-family:'Noto Sans KR',sans-serif;color:var(--ink)}
+.bhs{font-family:'Black Han Sans',sans-serif;font-weight:400}
+.p{position:relative;overflow:hidden;background:var(--paper)}
+.top{position:absolute;left:64px;right:64px;display:flex;justify-content:space-between;font-weight:900;letter-spacing:.02em}
+.rule{position:absolute;left:64px;right:64px;height:6px;background:var(--ink)}
+.han{position:absolute;color:var(--org);line-height:.78;letter-spacing:-.04em}
+.vert{position:absolute;writing-mode:vertical-rl;text-orientation:upright;line-height:1;letter-spacing:-.02em}
+.jamo{position:absolute;display:flex;gap:18px;font-weight:900;color:var(--ink)}
+.jamo span{border:4px solid var(--ink);display:flex;align-items:center;justify-content:center}
+.lead{position:absolute;left:64px;line-height:1.08}
+.lead em{font-style:normal;color:var(--org)}
+.price{position:absolute;left:64px;right:64px;background:var(--ink);color:var(--paper);display:flex;justify-content:space-between;align-items:center}
+.price .was{color:#a59a8b;text-decoration:line-through;font-weight:700}
+.price .now{color:var(--org);line-height:1}
+.fine{position:absolute;left:64px;right:64px;font-weight:700;line-height:1.55}
+.stamp{position:absolute;border:6px solid var(--org);color:var(--org);border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;transform:rotate(-12deg);font-weight:900;line-height:1.1;text-align:center}
