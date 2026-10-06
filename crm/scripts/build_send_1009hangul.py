@@ -2,6 +2,7 @@
 """한글날 '한 시간 더' 문자 발송 명단 (10/7 1차 · 10/8 2차) + 단골 직접 연락 명단.
 
 입력: crm/data/raw/발송명단_2026-10-01_1000_week-1001.xlsx (10/1 회차 명단: 거래고객·수강생·신규동의·제외)
+      crm/data/raw/회원설문_<날짜>_전체.xlsx (최신 회원: 10월 신규 동의 추가, 수신동의 상태 갱신)
       crm/data/raw/결제내역_*.xlsx (10/7~10/11 예약 보유자 제외용)
 출력: crm/output/발송명단_2026-10-07_1000_1009hangul.xlsx (개인정보 포함, git 미추적)
 2차(10/8) 발송 직전에는 최신 결제내역을 raw/ 에 넣고 다시 실행하면 그 사이 예약한 사람이 빠진다.
@@ -17,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build_crm as bc  # noqa: E402
 
 SRC = bc.RAW_DIR / "발송명단_2026-10-01_1000_week-1001.xlsx"
+OTHER_BRANCHES = {"Bundang", "Jinju", "Daegu", "Jeju"}  # 용산 오퍼와 무관한 지점만 이용한 사람은 뺀다
 OUT = bc.OUT_DIR / "발송명단_2026-10-07_1000_1009hangul.xlsx"
 WINDOW = (pd.Timestamp("2026-10-07"), pd.Timestamp("2026-10-12"))
 LINK = "{전용 링크}?utm_source=sms&utm_campaign=1009hangul"
@@ -66,7 +68,22 @@ def main() -> None:
     branch = G.assign(ph=G["연락처"].map(bc.normalize_phone)).set_index("ph")["이용지점"]
     base["이용지점"] = base["ph"].map(branch).fillna(base["구분"].map({"수강생": "Yongsan", "신규동의": "-"}))
 
+    # 최신 회원 내보내기: 10/1 이후 가입한 동의 회원 추가 + 현재 수신동의 상태로 갱신
+    mfile = bc.find_master_file()
+    M = pd.read_excel(mfile, dtype=str)
+    M["ph"] = M["연락처"].map(bc.normalize_phone)
+    M["가입"] = pd.to_datetime(M["가입일"], errors="coerce")
+    Mu = M.dropna(subset=["ph"]).sort_values("가입").drop_duplicates("ph", keep="last")
+    new = Mu[(Mu["가입"] >= "2026-10-01") & Mu["마케팅수신"].eq("동의") & ~Mu["ph"].isin(base["ph"])]
+    new = new.assign(구분="신규동의(10월)", 이름=new["이름"], 마케팅수신="동의", 비고="가입 " + new["가입일"].str[:10],
+                     이용지점=new["자주이용지점"].replace("-", "-"))
+    base = pd.concat([base, new[COLS + ["ph", "이용지점"]]], ignore_index=True)
+    status = Mu.set_index("ph")["마케팅수신"]
+    base["마케팅수신"] = base["ph"].map(status).fillna(base["마케팅수신"])
+    older = Mu[Mu["마케팅수신"].eq("동의") & (Mu["가입"] < "2026-10-01") & ~Mu["ph"].isin(base["ph"])]
+
     P = bc.load_payments()
+    paid_br = P.dropna(subset=["연락처_정규화"]).groupby("연락처_정규화")["예약 지점"].agg(lambda x: set(x.str.strip()))
     up = P[~P["취소"] & (P["예약시작"] >= WINDOW[0]) & (P["예약시작"] < WINDOW[1])]
     booked = set(up["연락처_정규화"].dropna())
     ad_no = set(E["연락처"].map(bc.normalize_phone).dropna())
@@ -78,7 +95,10 @@ def main() -> None:
         base = base[~mask]
     drop(base["ph"].isna(), "연락처 형식 오류")
     drop(base["ph"].duplicated(), "중복 연락처")
-    drop(base["ph"].isin(ad_no), "광고 미동의(10/1 제외 명단)")
+    drop(base["ph"].isin(ad_no) | base["마케팅수신"].eq("미동의"), "광고 미동의")
+    other_only = base["ph"].map(lambda ph: bool(paid_br.get(ph)) and paid_br.get(ph) <= OTHER_BRANCHES) | \
+        base["이용지점"].isin(["아르테파인 대구 라운지", "아르테파인 분당 라운지", "아르테파인 진주 라운지", "아르테파인 제주 라운지"])
+    drop(other_only, "다른 지점(분당·진주·대구·제주)만 이용")
     drop(base["마케팅수신"].eq("비회원"), "비회원(수신동의 확인 불가)")
     drop(base["ph"].isin(booked), "10/7~10/11 예약 보유")
     X = pd.concat(excl, ignore_index=True)
@@ -98,15 +118,17 @@ def main() -> None:
 
     summary = pd.DataFrame([
         ["1차 발송 (10/7 10:00) — 동의", len(yes), "1_문자1차_동의 시트를 문자 툴에 그대로 붙여 넣는다"],
-        ["  └ 거래고객·수강생", int((yes["구분"] != "신규동의").sum()), "용산 중심 + 인천 고객(인천 리뉴얼로 차량이 용산에 있음)"],
+        ["  └ 거래고객·수강생", int((~yes["구분"].str.startswith("신규동의")).sum()), "용산 중심 + 인천 고객(인천 리뉴얼로 차량이 용산에 있음)"],
         ["  └ 신규 동의 회원(9월 가입)", int((yes["구분"] == "신규동의").sum()), ""],
+        ["  └ 신규 동의 회원(10/1~10/6 가입)", int((yes["구분"] == "신규동의(10월)").sum()), f"{mfile.name} 기준"],
+        ["선택 — 8월 이전 가입 동의 회원", older["ph"].nunique(), "3_선택_이전동의회원 시트. 9/4 회차 등에서 받은 사람들. 넓게 가려면 포함(휴면 전환율 낮음 2.5%)"],
         ["1차 발송 — 미응답 (선택)", len(unasked), "수신동의 미응답 거래고객. 9/13 운영 결정(SEND_TO_UNASKED)대로 보내려면 포함, 보수적으로 가려면 제외"],
         ["2차 발송 (10/8 12:00)", "1차 대상 − 그 사이 예약자", "10/8 오전 최신 결제내역을 raw/ 에 넣고 이 스크립트를 다시 실행 → 1_문자1차 시트를 2차 명단으로 사용"],
         ["단골 직접 연락 (10/6~10/8)", len(vip), "참고_단골직접연락 시트. 하루 25명씩, 결과·예약여부 칸을 채운다"],
         ["제외", len(X), "9_제외 시트 (사유별)"],
         ["1차 문안 바이트(EUC-KR)", euckr_bytes(SMS1), "LMS(2,000바이트 이하)"],
         ["2차 문안 바이트(EUC-KR)", euckr_bytes(SMS2), "LMS"],
-        ["주의", "", "{전용 링크}를 할인 등록 후 받은 실제 링크로 바꾼다. 9월 30일 이후 가입자는 이 명단에 없다(회원 설문 최신 내보내기가 필요)."],
+        ["주의", "", "{전용 링크}를 할인 등록 후 받은 실제 링크로 바꾼다. 발송 직전 최신 회원 설문을 raw/ 에 넣고 다시 실행하면 새 가입자·수신거부가 반영된다."],
     ], columns=["항목", "인원", "설명"])
     reasons = X["제외사유"].value_counts().rename_axis("제외사유").reset_index(name="인원")
 
@@ -114,6 +136,8 @@ def main() -> None:
         summary.to_excel(xw, sheet_name="0_요약", index=False)
         yes[COLS + ["이용지점"]].to_excel(xw, sheet_name="1_문자1차_동의", index=False)
         unasked[COLS + ["이용지점"]].to_excel(xw, sheet_name="2_문자1차_미응답_선택", index=False)
+        older.assign(구분="이전 동의회원", 비고="가입 " + older["가입일"].str[:10], 이용지점=older["자주이용지점"])[COLS + ["이용지점"]] \
+            .to_excel(xw, sheet_name="3_선택_이전동의회원", index=False)
         vip.to_excel(xw, sheet_name="참고_단골직접연락", index=False)
         pd.DataFrame({"직접 연락 스크립트": [vip_script]}).to_excel(xw, sheet_name="참고_연락스크립트", index=False)
         pd.DataFrame({"회차": ["1차 10/7 10:00", "2차 10/8 12:00"], "문안": [SMS1, SMS2],
